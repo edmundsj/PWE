@@ -266,3 +266,19 @@ def generateBMatrix(erMatrix, urMatrix, mode):
         raise Exception(f"Undefined mode {mode}. Choose E or H");
 
     return materialMatrix;
+
+def generateVDMatrices(AMatrix, BMatrix):
+    """ Computes and sorts the eigenvalues and eigenvectors
+    Arguments:
+        AMatrix: The generalized eigenvalue problem operator including the curls and stuff
+        BMatrix: The material convolution matrix that we don't want to invert
+    """
+    eigenValues, eigenVectors = eig(AMatrix, BMatrix);
+    indices = np.flip(eigenValues.argsort()[::-1]);
+    eigenValues = eigenValues[indices];
+    eigenVectors = eigenVectors[:, indices];
+
+    eigenValueMatrix = np.diag(eigenValues);
+
+    return (eigenValueMatrix, eigenVectors);
+

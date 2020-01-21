@@ -198,7 +198,7 @@ class Test:
 
         # And now, the V and D matrices. These are (I think) the eigenvalues and eigenvectors.
         # D and V matrices for the E mode at the Gamma (G) point
-        diagonalDEModeGPoint = complexArray([0, 5.4393, 5.9424, 5.9424, 7.3189, 14.1508,
+        diagonalDEModeGPoint = complexArray([0, 5.3493, 5.9424, 5.9424, 7.3189, 14.1508,
             21.4393, 21.4393, 31.9392]);
         self.DMatrixEModeGPoint = np.diag(diagonalDEModeGPoint);
         self.VMatrixEModeGPoint = complexArray([
@@ -243,8 +243,8 @@ class Test:
             [0.1686, 0.2685, -0.0000, -0.3288, 0.0000, -0.0154, 0.1136, 0.0000, 0.0426]]);
 
         # D and V matrices for the H mode at the Gamma (G) point
-        diagonalDHModeGPoint = complexArray([5.9424, 8.0785, 18.1924, 23.3007, 21.4393,
-            23.3007, 9.1893, 8.0785]);
+        diagonalDHModeGPoint = complexArray([5.9424, 8.0785, 18.1924, 21.3007, 21.4393,
+            21.3007, 9.1893, 8.0785]);
         self.DMatrixHModeGPoint = np.diag(diagonalDHModeGPoint);
         self.VMatrixHModeGPoint = complexArray([
             [0.5056 + 0.0000j, -0.9513 + 0.0058j, 0.9763 + 0.0000j, 0.9819 - 0.0181j, -0.9760 + 0.0240j, -0.2154 + 0.0027j, -0.0000 - 0.0000j, -0.0461 + 0.0041j, 0],
@@ -569,8 +569,7 @@ class Test:
         # First, test the E-mode at the gamma (G) point
         BMatrixCalculated = generateBMatrix(self.erConvolutionMatrix, self.urConvolutionMatrix, 'E');
         BMatrixActual = self.BMatrixEModeGPoint;
-        errorMatrix = np.abs(BMatrixActual - BMatrixCalculated);
-        truthMatrix = np.greater(errorMatrix, 0.025*complexOnes((9,9)));
+        assertAlmostEqual(BMatrixActual, BMatrixCalculated, absoluteTolerance, relativeTolerance);
 
         # Next, test the E-mode at the X point
         BMatrixCalculated = generateBMatrix(self.erConvolutionMatrix, self.urConvolutionMatrix, 'E');
@@ -602,32 +601,35 @@ class Test:
         relativeTolerance = 1e-3;
 
         # First, test the E-mode at the gamma (G) point
-        DMatrixCalculated = 0;
+        (DMatrixCalculated, V) = generateVDMatrices(self.AMatrixEModeGPoint, self.BMatrixEModeGPoint);
         DMatrixActual = self.DMatrixEModeGPoint;
         assertAlmostEqual(DMatrixActual, DMatrixCalculated, absoluteTolerance, relativeTolerance);
 
         # Next, test the E-mode at the X point
-        DMatrixCalculated = 0;
+        (DMatrixCalculated, V) = generateVDMatrices(self.AMatrixEModeXPoint, self.BMatrixEModeXPoint);
         DMatrixActual = self.DMatrixEModeXPoint;
         assertAlmostEqual(DMatrixActual, DMatrixCalculated, absoluteTolerance, relativeTolerance);
 
         # Finally, test the E-mode at the M point
-        DMatrixCalculated = 0;
+        (DMatrixCalculated, V) = generateVDMatrices(self.AMatrixEModeMPoint, self.BMatrixEModeMPoint);
         DMatrixActual = self.DMatrixEModeMPoint;
         assertAlmostEqual(DMatrixActual, DMatrixCalculated, absoluteTolerance, relativeTolerance);
 
         # Next, test the H-mode at the gamma (G) point
-        DMatrixCalculated = 0;
-        DMatrixActual = self.DMatrixHModeMGoint;
+        (DMatrixCalculated, V) = generateVDMatrices(self.AMatrixHModeMPoint, self.BMatrixHModeGPoint);
+        DMatrixActual = self.DMatrixHModeMPoint;
+        errorMatrix = np.abs(DMatrixActual - DMatrixCalculated);
+        truthMatrix = np.greater(errorMatrix, 0.09*complexOnes((9,9)));
+        print(truthMatrix);
         assertAlmostEqual(DMatrixActual, DMatrixCalculated, absoluteTolerance, relativeTolerance);
 
         # Next, test the H-mode at the X point
-        DMatrixCalculated = 0;
+        (DMatrixCalculated, V) = generateVDMatrices(self.AMatrixHModeMPoint, self.BMatrixHModeXPoint);
         DMatrixActual = self.DMatrixHModeXPoint;
         assertAlmostEqual(DMatrixActual, DMatrixCalculated, absoluteTolerance, relativeTolerance);
 
         # Next, test the H-mode at the M point
-        DMatrixCalculated = 0;
+        (DMatrixCalculated, V) = generateVDMatrices(self.AMatrixHModeMPoint, self.BMatrixHModeMPoint);
         DMatrixActual = self.DMatrixHModeMPoint;
         assertAlmostEqual(DMatrixActual, DMatrixCalculated, absoluteTolerance, relativeTolerance);
 
