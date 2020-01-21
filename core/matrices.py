@@ -1,6 +1,7 @@
 import numpy as np
 import scipy as sp
 import scipy.linalg
+import math as math
 
 inv = np.linalg.inv;
 matrixExponentiate = sp.linalg.expm
@@ -11,6 +12,7 @@ eig = sp.linalg.eig # Performs eigendecomposition of identity intuitively (vecto
 norm = np.linalg.norm;
 sin = np.sin;
 cos = np.cos;
+pi = np.pi;
 
 OUTER_BLOCK_SHAPE = (2,2);
 scatteringElementShape = (2,2); # The shape of our core PQ matrices.
@@ -19,44 +21,11 @@ scatteringElementShape = (2,2);
 scatteringElementSize = scatteringElementShape[0];
 DBGLVL = 2;
 
-class _const:
-    class ConstError(TypeError): pass
-    class ConstCaseError(ConstError): pass
-
-    def __setattr__(self, name, value):
-        if name in self.__dict__:
-            raise self.ConstError(f"Can't change const {name}")
-        self.__dict__[name] = value;
-
-# This function makes a couple really subtle assumptions. First, we have to define what TE should be
-# when theta = 0. By convention, of how we define theta and phi, this should point along the y-axis.
-def aTEMGen(kx, ky, kz):
-    """
-    Generates the aTE and aTM vectors from the known kx, ky, kz incident vectors, assuming that
-    our device is planar in the x/y direction.
-    """
-    deviceNormalUnitVector = complexArray([0,0,-1]); # The z-normal vector (plane wave opposite direction as surface)
-    kn_vec = complexArray([kx, ky, kz]);
-    epsilon = 1e-3; # a small number. If both our kx and ky vectors are tiny, our cross product will not
-    # be computed properly, and we need to fix that.
-
-    if(abs(kx) < epsilon and abs(ky) < epsilon):
-        aTE = np.array([0,1,0]); # This is assuming W is the identity matrix.
-    else:
-        # HACK. I DO NOT KNOW WHY THE MINUS SIGN IS NEEDED.
-        aTE = - np.cross(deviceNormalUnitVector, kn_vec);
-        aTE = aTE / norm(aTE);
-
-    # I'm pretty sure Rumpf is wrong on this formula. For theta=0, phi=0, aTE should be pointing in
-    # the +y direction. If we want aTM to point in the +x direction, and the k-vector is pointing along
-    # z, we need to cross aTE with kn, not the other way around.
-    aTM = np.cross(aTE, kn_vec);
-    aTM = aTM / norm(aTM);
-
-    # Now, we want to shrink down these vectors so that they only contain the x/y polarization
-    # information, because we don't use the rest.
-
-    return (aTE[0:2], aTM[0:2]);
+def fftn(data):
+    """ Return the shifted version so the zeroth-order harmonic is in the center with
+    energy-conserving normalization """
+    dataShape = data.shape;
+    return np.fft.fftshift(np.fft.fftn(data)) / np.prod(dataShape);
 
 def complexArray(arrayInListForm):
     """ Wrapper for numpy array declaration that forces arrays to be complex doubles """
@@ -73,248 +42,161 @@ def complexZeros(matrixDimensionsTuple):
 def complexOnes(matrixDimensionsTuple):
     return np.ones(matrixDimensionsTuple, dtype=np.cdouble);
 
-def generateTransparentSMatrix():
-    STransparent = complexZeros(scatteringMatrixShape);
-    STransparent[0,1] = complexIdentity(scatteringElementSize);
-    STransparent[1,0] = complexIdentity(scatteringElementSize);
-    return STransparent;
-
-def calculateRedhefferProduct(SA, SB):
-    """
-    Computes the redheffer star product of
-    two matrices A and B. A and B can themselves (I think)
-    be matrices. The matrices must be in 2x2 block form for this
-    to work properly.
-    """
-
-    mat_shape = SA.shape;
-    # First, check to make sure SA and SB are the same shape.
-    if(mat_shape != SB.shape):
-        raise Exception(f'redhefferProduct: SA and SB are not of the same shape. SA is of shape {SA.shape} and SB is of shape {SB.shape}');
-
-    # Making the assumption that the sub-blocks are square.
-    SAB = complexZeros(mat_shape);
-    D = calculateRedhefferDMatrix(SA[0,1], SA[1,1], SB[0,0]);
-    F = calculateRedhefferFMatrix(SA[1,1], SB[0,0], SB[1,0]);
-
-    SAB[0,0] = SA[0,0] + D @ SB[0,0] @ SA[1,0];
-    SAB[0,1] = D @ SB[0,1];
-    SAB[1,0] = F @ SA[1,0];
-    SAB[1,1] = SB[1,1] +  F @ SA[1,1] @ SB[0,1];
-
-    return SAB;
-
-def calculatePMatrix(kx, ky, eri, uri):
-    """
-    Computes the P-matrix for the ith layer, given a known relative permeability ui and relative
-    permittivity pi. Assumes kx and ky vectors have been normalized to k0. This will have to be changed
-    when both kx, xy, ur, and er are tensors.
-    """
-    P = complexZeros(scatteringElementShape);
-    P[0,0] = kx*ky;
-    P[0,1] = uri*eri - np.square(kx);
-    P[1,0] = sq(ky) - uri*eri;
-    P[1,1] = - kx*ky;
-
-    P /= eri;
-    return P
-
-def calculateQMatrix(kx, ky, eri, uri):
-    """
-    Computes the Q-matrix for the ith layer, given a known relative permeability ui and relative
-    permittivity pi. Assumes kx and ky vectors have been normalized to k0. This will have to be changed
-    when both kx, xy, ur, and er are tensors.
-    """
-
-    Q = complexZeros(scatteringElementShape);
-    Q[0,0] = kx * ky;
-    Q[0,1] = uri*eri - sq(kx);
-    Q[1,0] = sq(ky) - uri*eri;
-    Q[1,1] = - kx * ky;
-
-    Q = Q / uri;
-    return Q;
-
-# FUNCTION DOES NOT HAVE UNIT TESTS
-def calculateScatteringAMatrix(Wi, Wj, Vi, Vj):
-    """
-    Computes the matrix Aij for two sets of eigenvector matrices Wi, Wj, Vi, Vj
-    """
-    return inv(Wi) @ Wj + inv(Vi) @ Vj;
-
-def calculateScatteringBMatrix(Wi, Wj, Vi, Vj): # UNIT TESTS COMPLETE
-    return inv(Wi) @ Wj - inv(Vi) @ Vj;
-
-def calculateScatteringDMatrix(Ai, Bi, Xi): # UNIT TESTS COMPLETE
-    AiInverse = inv(Ai);
-    return Ai - Xi @ Bi @ AiInverse @ Xi @ Bi;
-
-def calculateRedhefferDMatrix(S12A, S22A, S11B): # UNIT TESTS COMPLETE
-    """
-    Generates the D-matrix for the Redheffer star product. NOT the same as the Di matrix.
-    """
-    return S12A @ inv(complexIdentity(scatteringElementShape[0]) - S11B @ S22A)
-
-def calculateRedhefferFMatrix(S22A, S11B, S21B): # UNIT TESTS COMPLETE
-    """
-    Generates the F-matrix for computing the Redheffer star product.
-    """
-    return S21B @ inv(complexIdentity(scatteringElementShape[0]) - S11B @ S22A)
-
-def calculateKz(kx, ky, er, ur): # UNIT TESTS COMPLETE
-    return sqrt(er*ur - sq(kx) - sq(ky));
-
-def calculateKVector(theta, phi, er, ur):
-    n = sqrt(er*ur);
-    kx = n * sin(theta) * cos(phi);
-    ky = n * sin(theta) * sin(phi);
-    kz = n * cos(theta);
-    return complexArray([kx, ky, kz]);
-
-def calculateOmegaMatrix(kz): # UNIT TESTS COMPLETE
-    return complexIdentity(2)* (0 + 1j)*kz;
-
-def calculateVWXMatrices(kx, ky, kz, er, ur, k0=0, Li=0): # UNIT TESTS COMPLETE
-    """
-    FUNCTION DOES NOT CURRENTLY WORK. NEEDS TO BE FIXED.
-    Generates the V/W matrices (and the X matrix if k0 is nonzero)
-    """
-    Q = calculateQMatrix(kx, ky, er, ur);
-
-    O = calculateOmegaMatrix(kz);
-
-    W = complexIdentity(scatteringElementShape[0]);
-
-    OInverse = inv(O);
-    X = matrixExponentiate(O * k0 * Li)
-
-    V = Q @ W @ OInverse;
-
-    if(k0 > 0):
-        return (V, W, X);
+def reshapeLowDimensionalData(data):
+    dataShape = data.shape;
+    if(len(dataShape) == 1): # we have only x-data.
+        Nx = dataShape[0];
+        data = data.reshape(Nx, 1, 1);
+    elif(len(dataShape) == 2): # We have x and y data
+            Nx = dataShape[0];
+            Ny = dataShape[1];
+            data = data.reshape(Nx, Ny, 1);
+    elif(len(dataShape) == 3): # We have x- y- and z-data (
+        data = data;
     else:
-        return (V, W);
+        raise ValueError(f"""Input data has too many ({len(dataShape)}) dimensions.
+        Only designed for up to 3 spatial dimensions""");
 
+    return data;
 
-def calculateInternalSMatrix(kx, ky, er, ur, k0, Li, Wg, Vg):
+def calculateZeroHarmonicLocation(*numberHarmonicsTi):
+    zeroHarmonicLocations = [];
+    for numberHarmonics in numberHarmonicsTi:
+        zeroHarmonicLocations.append(math.floor(numberHarmonics / 2));
 
-    # First, calculate the kz component inside this layer
-    kz = calculateKz(kx, ky, er, ur);
-    (Vi, Wi, Xi) = calculateVWXMatrices(kx, ky, kz, er, ur, k0, Li);
+    return zeroHarmonicLocations;
 
-    Ai = calculateScatteringAMatrix(Wi, Wg, Vi, Vg);
-    Bi = calculateScatteringBMatrix(Wi, Wg, Vi, Vg);
-
-    Di = calculateScatteringDMatrix(Ai, Bi, Xi);
-
-    Si = calculateInternalSMatrixFromRaw(Ai, Bi, Xi, Di);
-    return Si;
-
-def calculateReflectionRegionSMatrix(kx, ky, er, ur, Wg, Vg):
+def calculateMinHarmonic(*numberHarmonicsTi):
+    """ Returns the minimum harmonic value (i.e. -2 if there are 5 total harmonics)
+    Arguments:
+        numberHarmonicsTi: The number of harmonics in the ith direction.
     """
-    Calculates S-matrix for reflection region using raw material data
+    minHarmonics = [];
+    for numberHarmonics in numberHarmonicsTi:
+        minHarmonics.append(- math.floor(numberHarmonics / 2));
+
+    return minHarmonics;
+
+def calculateMaxHarmonic(*numberHarmonicsTi):
+    """ Returns the maximum harmonic value (i.e. +2 if there are 5 total harmonics, +1 if there are 4)
+    Arguments:
+        numberHarmonicsTi: The number of harmonics in the ith direction.
     """
-    kz = calculateKz(kx, ky, er, ur);
-    (Vi, Wi) = calculateVWXMatrices(kx, ky, kz, er, ur);
+    maxHarmonics = [];
+    for numberHarmonics in numberHarmonicsTi:
+        if(numberHarmonics % 2 == 0):
+            maxHarmonics.append(math.floor(numberHarmonics / 2) - 1);
+        else:
+            maxHarmonics.append(math.floor(numberHarmonics / 2));
 
-    Ai = calculateScatteringAMatrix(Wg, Wi, Vg, Vi);
-    Bi = calculateScatteringBMatrix(Wg, Wi, Vg, Vi);
+    return maxHarmonics;
 
-    Si = calculateReflectionRegionSMatrixFromRaw(Ai, Bi);
-    return Si;
-
-def calculateTransmissionRegionSMatrix(kx, ky, er, ur, Wg, Vg):
+# This function is too long.
+def generateConvolutionMatrix(A, P, Q=1, R=1):
     """
-    Calculates S-matrix for reflection region using raw material data
+    Generates the 1, 2, or 3D matrix corresponding to the convolution operation with A.
+    P: Number of spatial harmonics along x
+    Q: Number of spatial harmonics along y
+    R: Number of spatial harmonics along z
     """
-    kz = calculateKz(kx, ky, er, ur);
-    (Vi, Wi) = calculateVWXMatrices(kx, ky, kz, er, ur);
+    # Now, for the code below to work for any dimension we need to add dimensions to A
+    dataDimension = len(A.shape);
 
-    Ai = calculateScatteringAMatrix(Wg, Wi, Vg, Vi);
-    Bi = calculateScatteringBMatrix(Wg, Wi, Vg, Vi);
+    convolutionMatrixSize = P*Q*R;
+    convolutionMatrixShape = (convolutionMatrixSize, convolutionMatrixSize);
+    convolutionMatrix = complexZeros(convolutionMatrixShape)
 
-    Si = calculateTransmissionRegionSMatrixFromRaw(Ai, Bi);
-    return Si;
+    A = reshapeLowDimensionalData(A);
+    (Nx, Ny, Nz) = A.shape;
+    zeroHarmonicXLocation = math.floor(Nx/2);
+    zeroHarmonicYLocation = math.floor(Ny/2);
+    zeroHarmonicZLocation = math.floor(Nz/2);
 
-def calculateInternalSMatrixFromRaw(Ai, Bi, Xi, Di):
+    A = fftn(A);
+
+    for rrow in range(R):
+        for qrow in range(Q):
+            for prow in range(P):
+                row = rrow*Q*P + qrow*P + prow;
+                for rcol in range(R):
+                    for qcol in range(Q):
+                        for pcol in range(P):
+                            col = rcol*Q*P + qcol*P + pcol;
+                            # Get the desired harmonics relative to the 0th-order harmonic.
+                            desiredHarmonicZ = rrow - rcol;
+                            desiredHarmonicY = qrow - qcol;
+                            desiredHarmonicX = prow - pcol;
+
+                            # Get those harmonic locations from the zero harmonic location.
+                            desiredHarmonicXLocation = zeroHarmonicXLocation + desiredHarmonicX;
+                            desiredHarmonicYLocation = zeroHarmonicYLocation + desiredHarmonicY;
+                            desiredHarmonicZLocation = zeroHarmonicZLocation + desiredHarmonicZ;
+
+                            convolutionMatrix[row][col] = \
+                                A[desiredHarmonicXLocation][desiredHarmonicYLocation][desiredHarmonicZLocation];
+    return convolutionMatrix;
+
+def getXComponents(*args):
+    """ Gets the x component from a 2 or 3 element row or column vector
+    Arguments:
+        args: Any number of numpy arrays in row or column vector form
     """
-    Compute the symmetric scattering matrix using free space (gap layer, Wg)
-    The goal is to minimize computation. For each layer, we only want to compute the P/Q/W matrices
-    once, and then generate the scattering matrices from that, and return the scattering matrix to
-    the main program, which will be used in subsequent computation. The exception is the generation
-    of the gap matrices, which we only want to generate once, because they are re-used throughout
-    the program
+    xComponents = [];
+    for a in args:
+        if(a.shape == (3,) or a.shape == (2,)): # element is a row vector
+            xComponents.append(a[0]);
+        elif(a.shape == (3,1) or a.shape == (2,1)): # element is a column vector
+            xComponents.append(a[0,0]);
+
+    return xComponents;
+
+def getYComponents(*args):
+    """ Gets the y component from a 2 or 3 element row or column vector
+    Arguments:
+        args: Any number of numpy arrays in row or column vector form
     """
-    # The shape of our overall scattering matrix. Will be a matrix of matrices.
-    S = complexZeros(scatteringMatrixShape);
+    yComponents = [];
 
-    # First, compute all the auxiliary matrices we need to compute our scattering matrix
-    AiInverse = inv(Ai);
-    DiInverse = inv(Di);
+    for a in args:
+        if(a.shape == (3,) or a.shape == (2,)):
+            yComponents.append(a[1]);
+        elif(a.shape == (3,1) or a.shape == (2,1)):
+            yComponents.append(a[1,0]);
 
-    S[0,0] = DiInverse @ ((Xi @ Bi @ AiInverse @ Xi @ Ai) - Bi)
-    S[0,1] = DiInverse @ Xi @ (Ai - (Bi @ AiInverse @ Bi));
-    S[1,0] = S[0,1];
-    S[1,1] = S[0,0];
+    return yComponents;
 
-    return S;
 
-def calculateReflectionRegionSMatrixFromRaw(AReflectionRegion, BReflectionRegion):
+def generateKxMatrix(blochVector, T1, numberHarmonicsT1, T2=complexArray([0,0,0]), numberHarmonicsT2=1,
+        T3=complexArray([0,0,0]), numberHarmonicsT3=1):
+    """ Generates the Kx matrix for a given bloch vector and number of harmonics
+    The matrix this returns assumes a vector that is indexed first over kx, then over ky,
+    then over kz. Meaning that the iteration over kz should be in the outermost loop.
+    Arguments:
+        blochVector: The bloch vector currently under test
+        Ti: Reciprocal lattice vector i. Assumed to be a 3-row vector.
+        numberHarmonicsTi: Number of harmonics along plane of Ti
     """
-    """
-    S = complexZeros(scatteringMatrixShape);
-    A = AReflectionRegion;
-    B = BReflectionRegion;
+    matrixSize = numberHarmonicsT1 * numberHarmonicsT2 * numberHarmonicsT3;
+    matrixShape = (matrixSize, matrixSize);
+    KxMatrix = complexZeros(matrixShape)
 
-    AInverse = inv(A);
+    (blochVectorx, T1x, T2x, T3x) = getXComponents(blochVector, T1, T2, T3);
+    # We need to zero our 0th-order harmonic (we want our sum to run from -P/2 to P/2, not 0 to P)
+    pOffset = math.floor(numberHarmonicsT1 / 2);
+    qOffset = math.floor(numberHarmonicsT2 / 2);
+    rOffset = math.floor(numberHarmonicsT3 / 2);
 
-    S[0,0] = - AInverse @ B;
-    S[0,1] = 2 * AInverse;
-    S[1,0] = 0.5 * (A - B @ AInverse @ B)
-    S[1,1] = B @ AInverse;
+    for r in range(numberHarmonicsT3):
+        for q in range(numberHarmonicsT2):
+            for p in range(numberHarmonicsT1):
+                diagonalIndex = r * numberHarmonicsT2 * numberHarmonicsT1 + q * numberHarmonicsT1 + p;
+                desiredHarmonic1 = p - pOffset;
+                desiredHarmonic2 = q - qOffset;
+                desiredHarmonic3 = r - rOffset;
 
-    return S;
+                KxMatrix[diagonalIndex][diagonalIndex] = blochVectorx - \
+                        desiredHarmonic1*T1x - desiredHarmonic2*T2x - desiredHarmonic3*T3x;
 
-def calculateTransmissionRegionSMatrixFromRaw(ATransmissionRegion, BTransmissionRegion): # UNIT TESTS COMPLETE
-    """
-    Computes the transmission scattering matrix (the one at the 'output' of our device.) from the raw
-    """
-    A = ATransmissionRegion;
-    B = BTransmissionRegion;
+    return KxMatrix;
 
-    AInverse = inv(A);
-    S = complexZeros(scatteringMatrixShape);
-
-    S[0,0] = B@ AInverse;
-    S[0,1] = 0.5* (A- (B @ AInverse @ B))
-    S[1,0] = 2* AInverse;
-    S[1,1] = - AInverse @ B;
-
-    return S;
-
-def calculateEz(kx, ky, kz, Ex, Ey):
-    '''
-    Calculate the z-component of the electromagnetic field from the x- and y-components using the divergence
-    theorem. We are assuming that the material in which we are calculating the z-component is LHI. The Ex
-    and Ey components are assumed to be scalars, eri and uri, the relative permittivities and permeabilities,
-    are also assumed to be scalars.
-    '''
-    # First, we calculate kz in our medium from the refractive index and the (ASSUMED) dispersion
-    # relation of the medium.
-    Ez = - (kx*Ex + ky*Ey) / kz
-    return Ez;
-
-def calculateRT(kzReflectionRegion, kzTransmissionRegion,
-        urReflectionRegion, urTransmissionRegion, ExyzReflected, ExyzTransmitted):
-    '''
-    Calculate the reflectance and transmittance given an input electric field vector
-    (assumed to be a column array in the form [[Ex],[Ey]]), the incident kz, and the transmitted
-    kz. WARNING: assumes incident fields are normalized to a magnitude of 1. We need to enforce
-    this elsewhere.
-    '''
-    R = sq(norm(ExyzReflected))
-    T = sq(norm(ExyzTransmitted))*np.real(kzTransmissionRegion / urTransmissionRegion) / \
-            (kzReflectionRegion / urReflectionRegion);
-
-    return (R, T);
 

@@ -39,15 +39,17 @@ class Test:
         self.statuses = []; # statuses sent back from our tests (boolean)
         self.unitTestsEnabled = True;
         self.integrationTestsEnabled = True;
-
-        self.a = 1;
-        self.r = 0.35 * self.a;
+        
+        a = 1;
+        self.ax = a;
+        self.ay = a;
+        self.r = 0.35 * a;
         self.er = 9.0;
 
         self.Nx = 512;
         self.Ny = 512;
-        self.dx = self.a / self.Nx;
-        self.dy = self.a / self.Ny;
+        self.dx = self.ax / self.Nx;
+        self.dy = self.ay / self.Ny;
         self.P = 3;
         self.Q = self.P;
         self.matrixDimensions = self.P * self.Q;
@@ -55,14 +57,15 @@ class Test:
 
         # The lattice vectors used in our simulation. For orthorhombic symmetry, these are just 2*pi/a
         # multiplied by the unit vector in the direction normal to the planes of symmetry.
-        self.T1 = (2 * pi / a ) * complexArray([1, 0]);
-        self.T2 = (2 * pi / a ) * complexArray([0, 1]);
-        self.blockVectorGPoint = 0*self.T1;
+        self.T1 = (2 * pi / self.ax) * complexArray([1, 0]);
+        self.T2 = (2 * pi / self.ay) * complexArray([0, 1]);
+        self.T3 = complexArray([0,0]); # there is no z-periodicity.
+        self.blochVectorGPoint = 0*self.T1;
         self.blochVectorXPoint = 0.5*self.T1;
         self.blochVectorMPoint = 0.5*self.T1 + 0.5*self.T2;
 
-        xcoors = np.linspace(-self.a/2 + self.dx/2, self.a/2 - self.dx/2, self.Nx);
-        ycoors = np.linspace(-self.a/2 + self.dy/2, self.a/2 - self.dy/2, self.Ny);
+        xcoors = np.linspace(-self.ax/2 + self.dx/2, self.ax/2 - self.dx/2, self.Nx);
+        ycoors = np.linspace(-self.ay/2 + self.dy/2, self.ay/2 - self.dy/2, self.Ny);
         (X, Y) = np.meshgrid(xcoors, ycoors);
         self.UR = complexOnes((self.Nx, self.Ny));
         self.ER = (self.er-1) * np.heaviside(sq(X) + sq(Y) - sq(self.r),1)
@@ -99,7 +102,7 @@ class Test:
         diagonalValuesKyXPoint = complexArray([6.2832, 6.2832, 6.2832, 0, 0, 0, -6.2832, -6.2832, -6.2832]);
         self.KyMatrixXPoint = np.diag(diagonalValuesKyXPoint);
 
-        diagonalValuesKxMPoint = complexArray([9.4248, 3.1416, -1.1416, 9.4248, 3.1416,
+        diagonalValuesKxMPoint = complexArray([9.4248, 3.1416, -3.1416, 9.4248, 3.1416,
             -3.1416, 9.4248, 3.1416, -3.1416]);
         self.KxMatrixMPoint = np.diag(diagonalValuesKxMPoint);
 
@@ -315,6 +318,11 @@ class Test:
 
     def runUnitTests(self):
         print("--------- RUNNING UNIT TESTS... ----------");
+        self.testCaller(self.testGetXComponents);
+        self.testCaller(self.testGetYComponents);
+        self.testCaller(self.testCalculateMinHarmonic);
+        self.testCaller(self.testCalculateMaxHarmonic);
+        self.testCaller(self.testCalculateZeroHarmonicLocation);
         self.testCaller(self.testReshapeLowDimensionalData);
         self.testCaller(self.testGenerateConvolutionMatrix);
         self.testCaller(self.testGenerateKxMatrix);
@@ -337,6 +345,65 @@ class Test:
 
         print("--------- END INTEGRATION TESTS... ----------");
 
+    def testGetXComponents(self):
+        testVector1 = complexArray([0.163, 0.5, 0.888]);
+        testVector2 = complexArray([0.246, 0.99, 0.2]);
+        xComponentsCalculated = getXComponents(testVector1, testVector2);
+        xComponentsActual = [0.163, 0.246];
+        assertAlmostEqual(xComponentsActual, xComponentsCalculated);
+
+        testVector1 = complexArray([[0.183], [0.5], [0.888]]);
+        testVector2 = complexArray([[0.266], [0.99], [0.2]]);
+        xComponentsCalculated = getXComponents(testVector1, testVector2);
+        xComponentsActual = [0.183, 0.266];
+        assertAlmostEqual(xComponentsActual, xComponentsCalculated);
+
+        testVector1 = complexArray([[1.173], [0.7]]);
+        testVector2 = complexArray([1.256, 1.99]);
+        xComponentsCalculated = getXComponents(testVector1, testVector2);
+        xComponentsActual = [1.173, 1.256];
+        assertAlmostEqual(xComponentsActual, xComponentsCalculated);
+
+    def testGetYComponents(self):
+        testVector1 = complexArray([0.173, 0.4, 0.888]);
+        testVector2 = complexArray([0.256, 0.89, 0.2]);
+        yComponentsCalculated = getYComponents(testVector1, testVector2);
+        yComponentsActual = [0.4, 0.89];
+        assertAlmostEqual(yComponentsActual, yComponentsCalculated);
+
+        testVector1 = complexArray([[0.173], [0.5], [0.888]]);
+        testVector2 = complexArray([[0.256], [0.99], [0.2]]);
+        yComponentsCalculated = getYComponents(testVector1, testVector2);
+        yComponentsActual = [0.5, 0.99];
+        assertAlmostEqual(yComponentsActual, yComponentsCalculated);
+
+        testVector1 = complexArray([[0.173], [0.7]]);
+        testVector2 = complexArray([0.256, 1.99]);
+        yComponentsCalculated = getYComponents(testVector1, testVector2);
+        yComponentsActual = [0.7, 1.99];
+        assertAlmostEqual(yComponentsActual, yComponentsCalculated);
+
+    def testCalculateZeroHarmonicLocation(self):
+        harmonicNumber1 = 5;
+        harmonicNumber2 = 6;
+        zeroHarmonicLocationsCalculated = calculateZeroHarmonicLocation(harmonicNumber1, harmonicNumber2);
+        zeroHarmonicLocationsActual = [2, 3];
+        assertAlmostEqual(zeroHarmonicLocationsActual, zeroHarmonicLocationsCalculated);
+
+    def testCalculateMinHarmonic(self):
+        harmonicNumber1 = 5;
+        harmonicNumber2 = 6;
+        minHarmonicCalculated= calculateMinHarmonic(harmonicNumber1, harmonicNumber2);
+        minHarmonicActual = [-2, -3];
+        assertAlmostEqual(minHarmonicActual, minHarmonicCalculated);
+
+    def testCalculateMaxHarmonic(self):
+        harmonicNumber1 = 5;
+        harmonicNumber2 = 6;
+        maxHarmonicCalculated= calculateMaxHarmonic(harmonicNumber1, harmonicNumber2);
+        maxHarmonicActual = [2, 2];
+        assertAlmostEqual(maxHarmonicActual, maxHarmonicCalculated);
+
     def testGenerateConvolutionMatrix(self):
 
         # Test case 1: When we pass in a homogenous device, we should get out a multiple of the identity.
@@ -353,7 +420,6 @@ class Test:
 
         convolutionMatrixCalculated = generateConvolutionMatrix(A, P, Q, R);
         convolutionMatrixActual = er * complexIdentity(P*Q*R);
-
 
         assertAlmostEqual(convolutionMatrixActual, convolutionMatrixCalculated,
                 absoluteTolerance, relativeTolerance);
@@ -409,17 +475,17 @@ class Test:
 
         # Test our KX matrix at the gamma point
         kxMatrixActual = self.KxMatrixGPoint;
-        kxMatrixCalculated = 0;
+        kxMatrixCalculated = generateKxMatrix(self.blochVectorGPoint, self.T1, self.P, self.T2, self.Q);
         assertAlmostEqual(kxMatrixActual, kxMatrixCalculated, absoluteTolerance, relativeTolerance);
 
         # Test our KX matrix at the X point
         kxMatrixActual = self.KxMatrixXPoint;
-        kxMatrixCalculated = 0;
+        kxMatrixCalculated = generateKxMatrix(self.blochVectorXPoint, self.T1, self.P, self.T2, self.Q);
         assertAlmostEqual(kxMatrixActual, kxMatrixCalculated, absoluteTolerance, relativeTolerance);
 
         # Test our KX matrix at the M point
-        kxMatrixActual = self.KX_M;
-        kxMatrixCalculated = 0;
+        kxMatrixActual = self.KxMatrixMPoint;
+        kxMatrixCalculated = generateKxMatrix(self.blochVectorMPoint, self.T1, self.P, self.T2, self.Q);
         assertAlmostEqual(kxMatrixActual, kxMatrixCalculated, absoluteTolerance, relativeTolerance);
 
     def testGenerateKyMatrix(self):
