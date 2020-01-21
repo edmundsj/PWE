@@ -70,6 +70,9 @@ def complexZeros(matrixDimensionsTuple):
     """ Wrapper for numpy zeros declaration that forces arrays to be complex doubles """
     return np.zeros(matrixDimensionsTuple, dtype=np.cdouble);
 
+def complexOnes(matrixDimensionsTuple):
+    return np.ones(matrixDimensionsTuple, dtype=np.cdouble);
+
 def generateTransparentSMatrix():
     STransparent = complexZeros(scatteringMatrixShape);
     STransparent[0,1] = complexIdentity(scatteringElementSize);
