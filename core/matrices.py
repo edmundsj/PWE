@@ -1,3 +1,6 @@
+# TODO:
+#   1. Turn large diagonal matrices into sparse matrices (K matrices)
+
 import numpy as np
 import scipy as sp
 import scipy.linalg
@@ -181,22 +184,85 @@ def generateKxMatrix(blochVector, T1, numberHarmonicsT1, T2=complexArray([0,0,0]
     KxMatrix = complexZeros(matrixShape)
 
     (blochVectorx, T1x, T2x, T3x) = getXComponents(blochVector, T1, T2, T3);
-    # We need to zero our 0th-order harmonic (we want our sum to run from -P/2 to P/2, not 0 to P)
-    pOffset = math.floor(numberHarmonicsT1 / 2);
-    qOffset = math.floor(numberHarmonicsT2 / 2);
-    rOffset = math.floor(numberHarmonicsT3 / 2);
+    (minHarmonicT1, minHarmonicT2, minHarmonicT3) = calculateMinHarmonic(
+            numberHarmonicsT1, numberHarmonicsT2, numberHarmonicsT3);
+    (maxHarmonicT1, maxHarmonicT2, maxHarmonicT3) = calculateMaxHarmonic(
+            numberHarmonicsT1, numberHarmonicsT2, numberHarmonicsT3);
 
-    for r in range(numberHarmonicsT3):
-        for q in range(numberHarmonicsT2):
-            for p in range(numberHarmonicsT1):
-                diagonalIndex = r * numberHarmonicsT2 * numberHarmonicsT1 + q * numberHarmonicsT1 + p;
-                desiredHarmonic1 = p - pOffset;
-                desiredHarmonic2 = q - qOffset;
-                desiredHarmonic3 = r - rOffset;
+    diagonalIndex = 0;
+    for desiredHarmonicT3 in range(minHarmonicT3, maxHarmonicT3 + 1):
+        for desiredHarmonicT2 in range(minHarmonicT2, maxHarmonicT2 + 1):
+            for desiredHarmonicT1 in range(minHarmonicT1, maxHarmonicT1 + 1):
 
                 KxMatrix[diagonalIndex][diagonalIndex] = blochVectorx - \
-                        desiredHarmonic1*T1x - desiredHarmonic2*T2x - desiredHarmonic3*T3x;
+                        desiredHarmonicT1*T1x - desiredHarmonicT2*T2x - desiredHarmonicT3*T3x;
+                diagonalIndex += 1;
 
     return KxMatrix;
 
 
+def generateKyMatrix(blochVector, T1, numberHarmonicsT1, T2=complexArray([0,0,0]), numberHarmonicsT2=1,
+        T3=complexArray([0,0,0]), numberHarmonicsT3=1):
+    """ Generates the Kx matrix for a given bloch vector and number of harmonics
+    The matrix this returns assumes a vector that is indexed first over kx, then over ky,
+    then over kz. Meaning that the iteration over kz should be in the outermost loop.
+    Arguments:
+        blochVector: The bloch vector currently under test
+        Ti: Reciprocal lattice vector i. Assumed to be a 3-row vector.
+        numberHarmonicsTi: Number of harmonics along plane of Ti
+    """
+    matrixSize = numberHarmonicsT1 * numberHarmonicsT2 * numberHarmonicsT3;
+    matrixShape = (matrixSize, matrixSize);
+    KyMatrix = complexZeros(matrixShape)
+
+    (blochVectory, T1y, T2y, T3y) = getYComponents(blochVector, T1, T2, T3);
+    (minHarmonicT1, minHarmonicT2, minHarmonicT3) = calculateMinHarmonic(
+            numberHarmonicsT1, numberHarmonicsT2, numberHarmonicsT3);
+    (maxHarmonicT1, maxHarmonicT2, maxHarmonicT3) = calculateMaxHarmonic(
+            numberHarmonicsT1, numberHarmonicsT2, numberHarmonicsT3);
+
+    diagonalIndex = 0;
+    for desiredHarmonicT3 in range(minHarmonicT3, maxHarmonicT3 + 1):
+        for desiredHarmonicT2 in range(minHarmonicT2, maxHarmonicT2 + 1):
+            for desiredHarmonicT1 in range(minHarmonicT1, maxHarmonicT1 + 1):
+
+                KyMatrix[diagonalIndex][diagonalIndex] = blochVectory - \
+                        desiredHarmonicT1*T1y - desiredHarmonicT2*T2y - desiredHarmonicT3*T3y;
+                diagonalIndex += 1;
+
+    return KyMatrix;
+
+def generateAMatrix(KxMatrix, KyMatrix, erMatrix, urMatrix, mode):
+    """ Generates intermediate A matrix from material matrices
+    Arguments:
+        erMatrix: Convolution matrix for the permittivity tensor
+        urMatrix: Convolution matirx for the permeability tensor
+        mode: 'E' or 'H'
+    """
+    if(mode == 'E'):
+        urMatrixInverse = inv(urMatrix);
+        AMatrix = KxMatrix @ urMatrixInverse @ KxMatrix + KyMatrix @ urMatrixInverse @ KyMatrix;
+    elif(mode == 'H'):
+        erMatrixInverse = inv(erMatrix);
+        AMatrix = KxMatrix @ erMatrixInverse @ KxMatrix + KyMatrix @ erMatrixInverse @ KyMatrix;
+    else:
+        raise Exception(f"Undefined mode {mode}. Choose E or H");
+
+    return AMatrix;
+
+def generateBMatrix(erMatrix, urMatrix, mode):
+    """ Generates intermediate B matrix from material matrices
+    Arguments:
+        erMatrix: Convolution matrix for the permittivity tensor
+        urMatrix: Convolution matirx for the permeability tensor
+        mode: 'E' or 'H'
+    """
+    materialMatrix = None;
+    if(mode == 'E'):
+        materialMatrix = erMatrix;
+    elif(mode == 'H'):
+        materialMatrix = urMatrix;
+    else:
+        raise Exception(f"Undefined mode {mode}. Choose E or H");
+
+    return materialMatrix;
