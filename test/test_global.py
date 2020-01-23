@@ -33,6 +33,19 @@ def assertAlmostEqual(a, b, absoluteTolerance=1e-8, relativeTolerance=1e-7):
 
     np.testing.assert_allclose(a, b, atol=absoluteTolerance, rtol=relativeTolerance);
 
+def assertArrayEqual(a, b):
+    np.testing.assert_array_equal(a, b);
+
+def assertStringEqual(a, b):
+    np.testing.assert_array_equal(a, b);
+
+def assertDictEqual(a, b):
+    """ Asserts that two dicts are equal by separately finding out whether their keys
+    and values are equal. There is probably a more elegant way to do this"""
+
+    np.testing.assert_array_equal(list(a.keys()), list(b.keys()));
+    np.testing.assert_array_equal(list(a.values()), list(b.values()));
+
 class Test:
     def __init__(self):
         self.messages = []; # Messages sent back from our tests (strings)
@@ -397,7 +410,13 @@ class Test:
         self.testCaller(self.testCalculateAMatrix);
         self.testCaller(self.testCalculateBMatrix);
         self.testCaller(self.testCalculateDMatrix);
+        self.testCaller(self.testCalculateReciprocalLatticeVectors);
+        self.testCaller(self.testDetermineCrystalType);
+        self.testCaller(self.testGenerateKeySymmetryPoints);
+        self.testCaller(self.testGenerateBlochVectors);
         self.testCaller(self.testCalculateEigenFrequencies);
+        self.testCaller(self.testUnwrapBlochVectors);
+        self.testCaller(self.testGenerateBandData);
         #self.testCaller(self.testCalculateVMatrix); # EIGENVECTORS NOT WORKING, DON'T KNOW WHY.
         print("--------- END UNIT TESTS... ----------");
 
@@ -737,12 +756,127 @@ class Test:
 
         assertAlmostEqual(reshapedActual, reshapedCalculated);
 
+    def testCalculateReciprocalLatticeVectors(self):
+        # A simple cubic 2D lattice
+        t1 = complexArray([1,0]);
+        t2 = complexArray([0,1]);
+        T1Actual = 2 * pi * complexArray([1,0]);
+        T2Actual = 2 * pi * complexArray([0,1]);
+        (T1Calculated, T2Calculated, T3) = calculateReciprocalLatticeVectors(t1, t2);
+
+        assertAlmostEqual(T1Actual, T1Calculated);
+        assertAlmostEqual(T2Actual, T2Calculated);
+
+        # An oblique lattice with a different size
+        t1 = complexArray([1,1]);
+        t2 = complexArray([0,1]);
+        T1Actual = 2 * pi * complexArray([1 , 0]);
+        T2Actual = 2 * pi * complexArray([-1 , 1]);
+        (T1Calculated, T2Calculated, T3) = calculateReciprocalLatticeVectors(t1, t2);
+
+        assertAlmostEqual(T1Actual, T1Calculated);
+        assertAlmostEqual(T2Actual, T2Calculated);
+
+        # A rectangular 2D lattice
+        t1 = complexArray([2,0]);
+        t2 = complexArray([0,1]);
+        T1Actual = 1 * pi * complexArray([1 , 0]);
+        T2Actual = 2 * pi * complexArray([0 , 1]);
+        (T1Calculated, T2Calculated, T3) = calculateReciprocalLatticeVectors(t1, t2);
+
+        assertAlmostEqual(T1Actual, T1Calculated);
+        assertAlmostEqual(T2Actual, T2Calculated);
+
+    def testDetermineCrystalType(self):
+        # An oblique lattice with a different size
+        T1 = 1 * pi * complexArray([1 , 0]);
+        T2 = 2 * pi * complexArray([-1 , 1]);
+        crystalTypeCalculated = determineCrystalType(T1, T2);
+        crystalTypeActual = "UNSUPPORTED";
+        assertStringEqual(crystalTypeActual, crystalTypeCalculated);
+
+        # A square lattice
+        T1 = 2 * pi * complexArray([1,0]);
+        T2 = 2 * pi * complexArray([0,1]);
+        crystalTypeActual = "SQUARE";
+        crystalTypeCalculated = determineCrystalType(T1, T2);
+        assertStringEqual(crystalTypeActual, crystalTypeCalculated);
+
+
+        # A rectangular lattice
+        T1 = 1 * pi * complexArray([1,0]);
+        T2 = 2 * pi * complexArray([0,1]);
+        crystalTypeActual = "RECTANGULAR";
+        crystalTypeCalculated = determineCrystalType(T1, T2);
+        assertStringEqual(crystalTypeActual, crystalTypeCalculated);
+
+    def testGenerateKeySymmetryPoints(self):
+
+        # A square lattice
+        T1 = 2 * pi * complexArray([1,0]);
+        T2 = 2 * pi * complexArray([0,1]);
+        keySymmetryPointsActual = [0.5 * T1, 0*T1, 0.5 * (T1 + T2)];
+        keySymmetryNamesActual = ["X", "G", "M"];
+        (keySymmetryPointsCalculated, keySymmetryNamesCalculated) = generateKeySymmetryPoints(T1, T2);
+
+        assertArrayEqual(keySymmetryPointsActual, keySymmetryPointsCalculated);
+        assertArrayEqual(keySymmetryNamesActual, keySymmetryNamesCalculated);
+
+        # A rectangular Lattice
+        T1 = 2 * pi * complexArray([1, 0]);
+        T2 = 1 * pi * complexArray([0, 1]);
+
+        keySymmetryPointsActual = [0.5 * T1, 0 * T1, 0.5 * T2, 0.5 * (T1 + T2)];
+        keySymmetryNamesActual = ["X", "G", "Y", "S"];
+        (keySymmetryPointsCalculated, keySymmetryNamesCalculated) = generateKeySymmetryPoints(T1, T2);
+
+        assertArrayEqual(keySymmetryPointsActual, keySymmetryPointsCalculated);
+        assertArrayEqual(keySymmetryNamesActual, keySymmetryNamesCalculated);
+
+    def testGenerateBlochVectors(self):
+        # Test for a square lattice with no internal points
+        numberInternalPoints = 0;
+        t1 = complexArray([1,0]);
+        t2 = complexArray([0,1]);
+        T1 = 2 * pi * complexArray([1,0]);
+        T2 = 2 * pi * complexArray([0,1]);
+        blochVectorsCalculated = generateBlochVectors(numberInternalPoints, t1, t2);
+        blochVectorsActual = [0.5 * T1, 0*T1, 0.5 * (T1 + T2)];
+
+        assertArrayEqual(blochVectorsActual, blochVectorsCalculated);
+
+        # Test for a rectangular lattice with no internal points
+        numberInternalPoints = 0;
+        t1 = complexArray([1,0]);
+        t2 = 2 *complexArray([0,1]);
+        T1 = 2 * pi * complexArray([1,0]);
+        T2 = pi * complexArray([0,1]);
+
+        blochVectorsCalculated = generateBlochVectors(numberInternalPoints, t1, t2);
+        blochVectorsActual = [0.5 * T1, 0*T1, 0.5 * T2,  0.5 * (T1 + T2)];
+
+        assertArrayEqual(blochVectorsActual, blochVectorsCalculated);
+
+        # Test for a square lattice with 1 internal points.
+        numberInternalPoints = 1;
+        t1 = pi * complexArray([1,0]);
+        t2 = pi * complexArray([0,1]);
+        GammaPoint = [0,0];
+
+        blochVectorsCalculated = generateBlochVectors(numberInternalPoints, t1, t2);
+        separationDistance = 1 / (numberInternalPoints + 1);
+        blochVectorsActual = [complexArray([1, 0]), complexArray([0.5, 0]), complexArray([0,0]),
+                complexArray([0.5, 0.5]), complexArray([1, 1])];
+
+        assertArrayEqual(blochVectorsActual, blochVectorsCalculated);
+
     def testCalculateEigenFrequencies(self):
         absoluteTolerance = 1e-4;
         relativeTolerance = 1e-3;
+        # Primitive real-space lattice vectors
         t1 = complexArray([1,0]);
         t2 = complexArray([0,1]);
-        pointsPerWalk = 3;
+        pointsPerWalk = 0;
         numberHarmonicsT1 = 3;
         numberHarmonicsT2 = 3;
 
@@ -764,13 +898,57 @@ class Test:
         ER = ER + 1;
 
         eigenFrequenciesActual = [
-                complexArray([0, 0.3681, 0.3880, 0.3880, 0.4306, 0.5987, 0.7369, 0.7369, 0.8995]),
                 complexArray([0.1817, 0.2268, 0.4020, 0.4124, 0.5578, 0.5646, 0.6642, 0.8602, 1.1107]),
-                complexArray([0.2429, 0.2737, 0.2739, 0.4493, 0.5574, 0.5871, 0.8257, 0.8618, 1.2471])]
-        blochVectors, eigenFrequenciesCalculated = calculateEigenfrequencies(pointsPerWalk, ER, UR, t1,
+                complexArray([0, 0.3681, 0.3880, 0.3880, 0.4306, 0.5987, 0.7369, 0.7369, 0.8995]),
+                complexArray([0.2429, 0.2737, 0.2739, 0.4493, 0.5574, 0.5871, 0.8257, 0.8618, 1.2471]),
+                ]
+
+        blochVectors, eigenFrequenciesCalculated, keySymmetryPoints, keySymmetryNames = \
+                calculateEigenfrequencies(pointsPerWalk, ER, UR, t1,
                 numberHarmonicsT1, t2, numberHarmonicsT2);
+
         assertAlmostEqual(eigenFrequenciesActual, eigenFrequenciesCalculated,
             absoluteTolerance, relativeTolerance);
+
+    def testUnwrapBlochVectors(self):
+        testVectors = [complexArray([1,0]), complexArray([0.5, 0]), complexArray([0,0]),
+                complexArray([0.5, 0.5]), complexArray([1, 1])];
+        xCoordinatesCalculated = unwrapBlochVectors(testVectors);
+        xCoordinatesActual = [0, 0.5, 1, 1 + 1/sqrt(2), 1 + 2/sqrt(2)];
+
+        assertAlmostEqual(xCoordinatesActual, xCoordinatesCalculated);
+
+    def testGenerateBandData(self):
+        testVectors = [
+                complexArray([1,0]),
+                complexArray([0.5, 0]),
+                complexArray([0,0]),
+                complexArray([0.5, 0.5]),
+                complexArray([1, 1])];
+        testFrequencies = np.array([
+            [0, 0.5, 0.6, 0.7],
+            [0.2, 0.6, 0.7, 0.8],
+            [0.3, 0.7, 0.8, 0.9],
+            [0.4, 0.8, 0.9, 1.0],
+            [0.5,0.9,1.0, 1.1]]);
+
+        xCoordinatesActual = np.array([
+                0, 0, 0, 0,
+                0.5, 0.5, 0.5, 0.5,
+                1, 1, 1, 1,
+                1 + 1/sqrt(2), 1 + 1/sqrt(2), 1 + 1/sqrt(2), 1 + 1/sqrt(2),
+                1 + 2/sqrt(2), 1 + 2/sqrt(2), 1 + 2/sqrt(2), 1 + 2/sqrt(2)]);
+        yCoordinatesActual = np.array([
+                0, 0.5, 0.6, 0.7,
+                0.2, 0.6, 0.7, 0.8,
+                0.3, 0.7, 0.8, 0.9,
+                0.4, 0.8, 0.9, 1.0,
+                0.5, 0.9, 1.0, 1.1]);
+        (xCoordinatesCalculated, yCoordinatesCalculated) = generateBandData(testVectors, testFrequencies);
+
+        assertAlmostEqual(xCoordinatesActual, xCoordinatesCalculated);
+        assertAlmostEqual(yCoordinatesActual, yCoordinatesCalculated);
+
 
     def itestEigenfrequencies(self):
         """ Integration test for entire system. Computes the normalized eigenfrequencies from the material
