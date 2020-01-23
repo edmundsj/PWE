@@ -12,6 +12,31 @@ import scipy as sp
 import math as math
 from shorthand import *
 
+class BandStructure:
+
+    def __init__(self, crystal):
+        self.crystal = crystal
+
+    def Solve(numberHarmonics, numberInternalPoints):
+        self.blochVectors = self.generateBlochVectors(numberInternalPoints)
+        self.frequencyData = []
+
+        erConvolutionMatrix = generateConvolutionMatrix(crystal.permittivityCellData, numberHarmonics)
+        urConvolutionMatrix = generateConvolutionMatrix(crystal.permeabilityCellData, numberHarmonics)
+        (numberHarmonicsT1, numberHarmonicsT2, x) = numberHarmonics
+
+        # TODO: WE SHOULD CALCULATE BOTH E AND H MODES. CURRENTLY ONLY CALCULATE E MODES.
+        for blochVector in self.blochVectors:
+            KxMatrix = self.generateKxMatrix(blochVector, numberHarmonics)
+            KyMatrix = generateKyMatrix(blochVector, numberHarmonics)
+            AMatrix = generateAMatrix(KxMatrix, KyMatrix, erConvolutionMatrix, urConvolutionMatrix, 'E');
+            BMatrix = generateBMatrix(erConvolutionMatrix, urConvolutionMatrix, 'E');
+            (DMatrix, VMatrix) = generateVDMatrices(AMatrix, BMatrix);
+            eigenValues = np.diagonal(DMatrix);
+            eigenFrequencies = scaleEigenvalues(eigenValues, crystal.latticeConstant);
+            self.frequencyData.append(eigenFrequencies);
+
+
 class Crystal:
 
     def __init__(self, permittivityCellData, permeabilityCellData, *latticeVectors):
@@ -94,12 +119,6 @@ class Crystal:
 
         return (keySymmetryPoints, keySymmetryNames);
 
-class BandSolver:
-
-    numberHarmonics = None;
-
-    def __init__(self, crystal):
-        raise NotImplementedError;
 
 def generateBlochVectors(crystal, internalPointsPerWalk):
 
@@ -123,35 +142,27 @@ def generateBlochVectors(crystal, internalPointsPerWalk):
 
     return blochVectors;
 
-def calculateZeroHarmonicLocation(*numberHarmonicsTi):
+def calculateZeroHarmonicLocation(numberHarmonics):
     zeroHarmonicLocations = [];
-    for numberHarmonics in numberHarmonicsTi:
-        zeroHarmonicLocations.append(math.floor(numberHarmonics / 2));
+    for num in numberHarmonics:
+        zeroHarmonicLocations.append(math.floor(num / 2));
 
     return zeroHarmonicLocations;
 
-def calculateMinHarmonic(*numberHarmonicsTi):
-    """ Returns the minimum harmonic value (i.e. -2 if there are 5 total harmonics)
-    Arguments:
-        numberHarmonicsTi: The number of harmonics in the ith direction.
-    """
+def calculateMinHarmonic(numberHarmonics):
     minHarmonics = [];
-    for numberHarmonics in numberHarmonicsTi:
-        minHarmonics.append(- math.floor(numberHarmonics / 2));
+    for num in numberHarmonics:
+        minHarmonics.append(- math.floor(num / 2));
 
     return minHarmonics;
 
-def calculateMaxHarmonic(*numberHarmonicsTi):
-    """ Returns the maximum harmonic value (i.e. +2 if there are 5 total harmonics, +1 if there are 4)
-    Arguments:
-        numberHarmonicsTi: The number of harmonics in the ith direction.
-    """
+def calculateMaxHarmonic(numberHarmonics):
     maxHarmonics = [];
-    for numberHarmonics in numberHarmonicsTi:
-        if(numberHarmonics % 2 == 0):
-            maxHarmonics.append(math.floor(numberHarmonics / 2) - 1);
+    for num in numberHarmonics:
+        if(num % 2 == 0):
+            maxHarmonics.append(math.floor(num / 2) - 1);
         else:
-            maxHarmonics.append(math.floor(numberHarmonics / 2));
+            maxHarmonics.append(math.floor(num / 2));
 
     return maxHarmonics;
 
@@ -203,10 +214,6 @@ def generateConvolutionMatrix(A, numberHarmonics):
     return convolutionMatrix;
 
 def getXComponents(*args):
-    """ Gets the x component from a 2 or 3 element row or column vector
-    Arguments:
-        args: Any number of numpy arrays in row or column vector form
-    """
     xComponents = [];
     for a in args:
         if(a.shape == (3,) or a.shape == (2,)): # element is a row vector
@@ -217,10 +224,6 @@ def getXComponents(*args):
     return xComponents;
 
 def getYComponents(*args):
-    """ Gets the y component from a 2 or 3 element row or column vector
-    Arguments:
-        args: Any number of numpy arrays in row or column vector form
-    """
     yComponents = [];
 
     for a in args:
@@ -232,76 +235,61 @@ def getYComponents(*args):
     return yComponents;
 
 
-def generateKxMatrix(blochVector, T1, numberHarmonicsT1, T2=complexArray([0,0,0]), numberHarmonicsT2=1,
-        T3=complexArray([0,0,0]), numberHarmonicsT3=1):
-    """ Generates the Kx matrix for a given bloch vector and number of harmonics
-    The matrix this returns assumes a vector that is indexed first over kx, then over ky,
-    then over kz. Meaning that the iteration over kz should be in the outermost loop.
-    Arguments:
-        blochVector: The bloch vector currently under test
-        Ti: Reciprocal lattice vector i. Assumed to be a 3-row vector.
-        numberHarmonicsTi: Number of harmonics along plane of Ti
-    """
-    matrixSize = numberHarmonicsT1 * numberHarmonicsT2 * numberHarmonicsT3;
+def generateKxMatrix(blochVector, crystal, numberHarmonics):
+    if crystal.dimensions is 2:
+        KxMatrix = generateKxMatrix2D(blochVector, crystal, numberHarmonics[0:2])
+        return KxMatrix
+    else:
+        raise NotImplementedError
+
+def generateKxMatrix2D(blochVector, crystal, numberHarmonics):
+    matrixSize = np.prod(numberHarmonics)
     matrixShape = (matrixSize, matrixSize);
     KxMatrix = complexZeros(matrixShape)
 
-    (blochVectorx, T1x, T2x, T3x) = getXComponents(blochVector, T1, T2, T3);
-    (minHarmonicT1, minHarmonicT2, minHarmonicT3) = calculateMinHarmonic(
-            numberHarmonicsT1, numberHarmonicsT2, numberHarmonicsT3);
-    (maxHarmonicT1, maxHarmonicT2, maxHarmonicT3) = calculateMaxHarmonic(
-            numberHarmonicsT1, numberHarmonicsT2, numberHarmonicsT3);
+    (T1, T2) = crystal.reciprocalLatticeVectors
+    (blochVectorx, T1x, T2x) = getXComponents(blochVector, T1, T2);
+    (minHarmonicT1, minHarmonicT2) = calculateMinHarmonic(numberHarmonics)
+    (maxHarmonicT1, maxHarmonicT2) = calculateMaxHarmonic(numberHarmonics)
 
     diagonalIndex = 0;
-    for desiredHarmonicT3 in range(minHarmonicT3, maxHarmonicT3 + 1):
-        for desiredHarmonicT2 in range(minHarmonicT2, maxHarmonicT2 + 1):
-            for desiredHarmonicT1 in range(minHarmonicT1, maxHarmonicT1 + 1):
+    for desiredHarmonicT2 in range(minHarmonicT2, maxHarmonicT2 + 1):
+        for desiredHarmonicT1 in range(minHarmonicT1, maxHarmonicT1 + 1):
 
-                KxMatrix[diagonalIndex][diagonalIndex] = blochVectorx - \
-                        desiredHarmonicT1*T1x - desiredHarmonicT2*T2x - desiredHarmonicT3*T3x;
-                diagonalIndex += 1;
+            KxMatrix[diagonalIndex][diagonalIndex] = blochVectorx - \
+                    desiredHarmonicT1*T1x - desiredHarmonicT2*T2x
+            diagonalIndex += 1;
 
-    return KxMatrix;
+    return KxMatrix
 
+def generateKyMatrix(blochVector, crystal, numberHarmonics):
+    if crystal.dimensions is 2:
+        KyMatrix = generateKyMatrix2D(blochVector, crystal, numberHarmonics[0:2])
+        return KyMatrix
+    else:
+        raise NotImplementedError
 
-def generateKyMatrix(blochVector, T1, numberHarmonicsT1, T2=complexArray([0,0,0]), numberHarmonicsT2=1,
-        T3=complexArray([0,0,0]), numberHarmonicsT3=1):
-    """ Generates the Kx matrix for a given bloch vector and number of harmonics
-    The matrix this returns assumes a vector that is indexed first over kx, then over ky,
-    then over kz. Meaning that the iteration over kz should be in the outermost loop.
-    Arguments:
-        blochVector: The bloch vector currently under test
-        Ti: Reciprocal lattice vector i. Assumed to be a 3-row vector.
-        numberHarmonicsTi: Number of harmonics along plane of Ti
-    """
-    matrixSize = numberHarmonicsT1 * numberHarmonicsT2 * numberHarmonicsT3;
+def generateKyMatrix2D(blochVector, crystal, numberHarmonics):
+    matrixSize = np.prod(numberHarmonics)
     matrixShape = (matrixSize, matrixSize);
     KyMatrix = complexZeros(matrixShape)
 
-    (blochVectory, T1y, T2y, T3y) = getYComponents(blochVector, T1, T2, T3);
-    (minHarmonicT1, minHarmonicT2, minHarmonicT3) = calculateMinHarmonic(
-            numberHarmonicsT1, numberHarmonicsT2, numberHarmonicsT3);
-    (maxHarmonicT1, maxHarmonicT2, maxHarmonicT3) = calculateMaxHarmonic(
-            numberHarmonicsT1, numberHarmonicsT2, numberHarmonicsT3);
+    (T1, T2) = crystal.reciprocalLatticeVectors
+    (blochVectory, T1y, T2y) = getYComponents(blochVector, T1, T2);
+    (minHarmonicT1, minHarmonicT2) = calculateMinHarmonic(numberHarmonics)
+    (maxHarmonicT1, maxHarmonicT2) = calculateMaxHarmonic(numberHarmonics)
 
     diagonalIndex = 0;
-    for desiredHarmonicT3 in range(minHarmonicT3, maxHarmonicT3 + 1):
-        for desiredHarmonicT2 in range(minHarmonicT2, maxHarmonicT2 + 1):
-            for desiredHarmonicT1 in range(minHarmonicT1, maxHarmonicT1 + 1):
+    for desiredHarmonicT2 in range(minHarmonicT2, maxHarmonicT2 + 1):
+        for desiredHarmonicT1 in range(minHarmonicT1, maxHarmonicT1 + 1):
 
-                KyMatrix[diagonalIndex][diagonalIndex] = blochVectory - \
-                        desiredHarmonicT1*T1y - desiredHarmonicT2*T2y - desiredHarmonicT3*T3y;
-                diagonalIndex += 1;
+            KyMatrix[diagonalIndex][diagonalIndex] = blochVectory - \
+                    desiredHarmonicT1*T1y - desiredHarmonicT2*T2y
+            diagonalIndex += 1;
 
     return KyMatrix;
 
 def generateAMatrix(KxMatrix, KyMatrix, erMatrix, urMatrix, mode):
-    """ Generates intermediate A matrix from material matrices
-    Arguments:
-        erMatrix: Convolution matrix for the permittivity tensor
-        urMatrix: Convolution matirx for the permeability tensor
-        mode: 'E' or 'H'
-    """
     if(mode == 'E'):
         urMatrixInverse = inv(urMatrix);
         AMatrix = KxMatrix @ urMatrixInverse @ KxMatrix + KyMatrix @ urMatrixInverse @ KyMatrix;
@@ -345,10 +333,8 @@ def calculateEigenfrequencies(pointsPerWalk, crystal, numberHarmonics):
 
     # TODO: WE SHOULD CALCULATE BOTH E AND H MODES. CURRENTLY ONLY CALCULATE E MODES.
     for blochVector in blochVectors:
-        KxMatrix = generateKxMatrix(blochVector, T1, numberHarmonicsT1,
-            T2, numberHarmonicsT2);
-        KyMatrix = generateKyMatrix(blochVector, T1, numberHarmonicsT1,
-            T2, numberHarmonicsT1);
+        KxMatrix = generateKxMatrix(blochVector, crystal, numberHarmonics)
+        KyMatrix = generateKyMatrix(blochVector, crystal, numberHarmonics)
         AMatrix = generateAMatrix(KxMatrix, KyMatrix, erConvolutionMatrix, urConvolutionMatrix, 'E');
         BMatrix = generateBMatrix(erConvolutionMatrix, urConvolutionMatrix, 'E');
         (DMatrix, VMatrix) = generateVDMatrices(AMatrix, BMatrix);

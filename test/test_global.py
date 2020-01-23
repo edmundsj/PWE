@@ -65,11 +65,14 @@ class Test:
         self.dy = self.ay / self.Ny;
         self.P = 3;
         self.Q = self.P;
+        self.numberHarmonics = (self.P, self.Q, 1)
         self.matrixDimensions = self.P * self.Q;
         self.matrixShape = (self.matrixDimensions, self.matrixDimensions);
 
         # The lattice vectors used in our simulation. For orthorhombic symmetry, these are just 2*pi/a
         # multiplied by the unit vector in the direction normal to the planes of symmetry.
+        self.t1 = complexArray([self.ax, 0])
+        self.t2 = complexArray([0, self.ay])
         self.T1 = (2 * pi / self.ax) * complexArray([1, 0]);
         self.T2 = (2 * pi / self.ay) * complexArray([0, 1]);
         #self.T3 = complexArray([0,0]); # there is no z-periodicity.
@@ -83,6 +86,7 @@ class Test:
         self.UR = complexOnes((self.Nx, self.Ny));
         self.ER = (self.er-1) * np.heaviside(sq(X) + sq(Y) - sq(self.r),1)
         self.ER = self.ER + 1;
+        self.crystal = Crystal(self.ER, self.UR, self.t1, self.t2)
 
         # The data for Kx, Ky, and Kz will be re-used at each point of key symmetry
         self.KxMatrixGPoint = complexZeros(self.matrixShape);
@@ -426,10 +430,8 @@ class Test:
         for a given input field, and to verify the reflectance/transmittance and enforce power 
         conservation.
         """
-        self.testCaller(self.itestEigenfrequencies);
 
         print("--------- RUNNING INTEGRATION TESTS... ----------");
-        #self.testCaller(self.itestGlobalScatteringMatrix);
 
         print("--------- END INTEGRATION TESTS... ----------");
 
@@ -474,21 +476,24 @@ class Test:
     def testCalculateZeroHarmonicLocation(self):
         harmonicNumber1 = 5;
         harmonicNumber2 = 6;
-        zeroHarmonicLocationsCalculated = calculateZeroHarmonicLocation(harmonicNumber1, harmonicNumber2);
+        numberHarmonics = (harmonicNumber1, harmonicNumber2)
+        zeroHarmonicLocationsCalculated = calculateZeroHarmonicLocation(numberHarmonics)
         zeroHarmonicLocationsActual = [2, 3];
         assertAlmostEqual(zeroHarmonicLocationsActual, zeroHarmonicLocationsCalculated);
 
     def testCalculateMinHarmonic(self):
         harmonicNumber1 = 5;
         harmonicNumber2 = 6;
-        minHarmonicCalculated= calculateMinHarmonic(harmonicNumber1, harmonicNumber2);
+        numberHarmonics = (harmonicNumber1, harmonicNumber2)
+        minHarmonicCalculated= calculateMinHarmonic(numberHarmonics)
         minHarmonicActual = [-2, -3];
         assertAlmostEqual(minHarmonicActual, minHarmonicCalculated);
 
     def testCalculateMaxHarmonic(self):
         harmonicNumber1 = 5;
         harmonicNumber2 = 6;
-        maxHarmonicCalculated= calculateMaxHarmonic(harmonicNumber1, harmonicNumber2);
+        numberHarmonics = (harmonicNumber1, harmonicNumber2)
+        maxHarmonicCalculated= calculateMaxHarmonic(numberHarmonics)
         maxHarmonicActual = [2, 2];
         assertAlmostEqual(maxHarmonicActual, maxHarmonicCalculated);
 
@@ -541,17 +546,17 @@ class Test:
 
         # Test our KX matrix at the gamma point
         kxMatrixActual = self.KxMatrixGPoint;
-        kxMatrixCalculated = generateKxMatrix(self.blochVectorGPoint, self.T1, self.P, self.T2, self.Q);
+        kxMatrixCalculated = generateKxMatrix(self.blochVectorGPoint, self.crystal, self.numberHarmonics)
         assertAlmostEqual(kxMatrixActual, kxMatrixCalculated, absoluteTolerance, relativeTolerance);
 
         # Test our KX matrix at the X point
         kxMatrixActual = self.KxMatrixXPoint;
-        kxMatrixCalculated = generateKxMatrix(self.blochVectorXPoint, self.T1, self.P, self.T2, self.Q);
+        kxMatrixCalculated = generateKxMatrix(self.blochVectorXPoint, self.crystal, self.numberHarmonics)
         assertAlmostEqual(kxMatrixActual, kxMatrixCalculated, absoluteTolerance, relativeTolerance);
 
         # Test our KX matrix at the M point
         kxMatrixActual = self.KxMatrixMPoint;
-        kxMatrixCalculated = generateKxMatrix(self.blochVectorMPoint, self.T1, self.P, self.T2, self.Q);
+        kxMatrixCalculated = generateKxMatrix(self.blochVectorMPoint, self.crystal, self.numberHarmonics)
         assertAlmostEqual(kxMatrixActual, kxMatrixCalculated, absoluteTolerance, relativeTolerance);
 
     def testGenerateKyMatrix(self):
@@ -559,19 +564,19 @@ class Test:
         relativeTolerance = 1e-3;
 
         # Test our KY matrix at the gamma point
-        kxMatrixActual = self.KyMatrixGPoint;
-        kxMatrixCalculated = generateKyMatrix(self.blochVectorGPoint, self.T1, self.P, self.T2, self.Q);
-        assertAlmostEqual(kxMatrixActual, kxMatrixCalculated, absoluteTolerance, relativeTolerance);
+        kyMatrixActual = self.KyMatrixGPoint;
+        kyMatrixCalculated = generateKyMatrix(self.blochVectorGPoint, self.crystal, self.numberHarmonics)
+        assertAlmostEqual(kyMatrixActual, kyMatrixCalculated, absoluteTolerance, relativeTolerance);
 
         # Test our KY matrix at the X point
-        kxMatrixActual = self.KyMatrixXPoint;
-        kxMatrixCalculated = generateKyMatrix(self.blochVectorXPoint, self.T1, self.P, self.T2, self.Q);
-        assertAlmostEqual(kxMatrixActual, kxMatrixCalculated, absoluteTolerance, relativeTolerance);
+        kyMatrixActual = self.KyMatrixXPoint;
+        kyMatrixCalculated = generateKyMatrix(self.blochVectorXPoint, self.crystal, self.numberHarmonics)
+        assertAlmostEqual(kyMatrixActual, kyMatrixCalculated, absoluteTolerance, relativeTolerance);
 
         # Test our KY matrix at the M point
-        kxMatrixActual = self.KyMatrixMPoint;
-        kxMatrixCalculated = generateKyMatrix(self.blochVectorMPoint, self.T1, self.P, self.T2, self.Q);
-        assertAlmostEqual(kxMatrixActual, kxMatrixCalculated, absoluteTolerance, relativeTolerance);
+        kyMatrixActual = self.KyMatrixMPoint;
+        kyMatrixCalculated = generateKyMatrix(self.blochVectorMPoint, self.crystal, self.numberHarmonics)
+        assertAlmostEqual(kyMatrixActual, kyMatrixCalculated, absoluteTolerance, relativeTolerance);
 
     def testCalculateAMatrix(self):
         absoluteTolerance = 1e-4;
@@ -941,59 +946,6 @@ class Test:
 
         assertAlmostEqual(xCoordinatesActual, xCoordinatesCalculated);
         assertAlmostEqual(yCoordinatesActual, yCoordinatesCalculated);
-
-
-    def itestEigenfrequencies(self):
-        """ Integration test for entire system. Computes the normalized eigenfrequencies from the material
-        parameters as a function of x and y """
-        a = 1;
-        ax = a;
-        ay = a;
-        r = 0.35 * a;
-        er = 9.0;
-
-        Nx = 512;
-        Ny = 512;
-        dx = ax / Nx;
-        dy = ay / Ny;
-        P = 3;
-        Q = P;
-        matrixDimensions = P * Q;
-        matrixShape = (matrixDimensions, matrixDimensions);
-
-        # The lattice vectors used in our simulation. For orthorhombic symmetry, these are just 2*pi/a
-        # multiplied by the unit vector in the direction normal to the planes of symmetry.
-        T1 = (2 * pi / ax) * complexArray([1, 0]);
-        T2 = (2 * pi / ay) * complexArray([0, 1]);
-        blochVectorGPoint = 0*T1;
-        blochVectorXPoint = 0.5*T1;
-        blochVectorMPoint = 0.5*T1 + 0.5*T2;
-
-        xcoors = np.linspace(-ax/2 + dx/2, ax/2 - dx/2, Nx);
-        ycoors = np.linspace(-ay/2 + dy/2, ay/2 - dy/2, Ny);
-        (X, Y) = np.meshgrid(xcoors, ycoors);
-        UR = complexOnes((Nx, Ny));
-        ER = (er-1) * np.heaviside(sq(X) + sq(Y) - sq(r),1)
-        ER = ER + 1;
-
-        numberHarmonics = (P, Q, 1)
-        erConvolutionMatrix = generateConvolutionMatrix(ER, numberHarmonics);
-        urConvolutionMatrix = generateConvolutionMatrix(UR, numberHarmonics);
-        KxMatrixGPoint = generateKxMatrix(blochVectorGPoint, T1, P, T2, Q);
-        KyMatrixGPoint = generateKyMatrix(blochVectorGPoint, T1, P, T2, Q);
-        AMatrixGPoint = generateAMatrix(KxMatrixGPoint, KyMatrixGPoint,
-               erConvolutionMatrix, urConvolutionMatrix, 'E')
-        BMatrixGPoint = generateBMatrix(erConvolutionMatrix, urConvolutionMatrix, 'E');
-        (DMatrixGPoint, VMatrixDpoint) = generateVDMatrices(AMatrixGPoint, BMatrixGPoint);
-        eigenValues = np.diagonal(DMatrixGPoint);
-
-        absoluteTolerance = 1e-4;
-        relativeTolerance = 1e-3;
-        eigenFrequenciesCalculated = scaleEigenvalues(eigenValues, a);
-        eigenFrequenciesActual = complexArray([0,0.3681, 0.3880, 0.3880, 0.4306,
-            0.5987, 0.7369, 0.7369, 0.8995])
-        assertAlmostEqual(eigenFrequenciesActual, eigenFrequenciesCalculated,
-               absoluteTolerance, relativeTolerance);
 
 
 def main():
