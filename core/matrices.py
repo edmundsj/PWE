@@ -9,177 +9,116 @@
 
 import numpy as np
 import scipy as sp
-import scipy.linalg
 import math as math
-from collections import OrderedDict
+from shorthand import *
 
-inv = np.linalg.inv;
-matrixExponentiate = sp.linalg.expm
-matrixSquareRoot = sp.linalg.sqrtm
-sqrt = np.lib.scimath.sqrt; # Takes sqrt of complex numbers
-sq = np.square;
-eig = sp.linalg.eig # Performs eigendecomposition of identity intuitively (vectors are unit vectors)
-norm = np.linalg.norm;
-sin = np.sin;
-cos = np.cos;
-pi = np.pi;
-dot = np.dot;
-cross = np.cross;
+class Crystal:
 
-OUTER_BLOCK_SHAPE = (2,2);
-scatteringElementShape = (2,2); # The shape of our core PQ matrices.
-scatteringMatrixShape = OUTER_BLOCK_SHAPE + scatteringElementShape;
-scatteringElementShape = (2,2);
-scatteringElementSize = scatteringElementShape[0];
-DBGLVL = 2;
+    def __init__(self, permittivityCellData, permeabilityCellData, *latticeVectors):
+        self.permeabilityCellData = permeabilityCellData
+        self.permittivityCellData = permittivityCellData
 
-def fftn(data):
-    """ Return the shifted version so the zeroth-order harmonic is in the center with
-    energy-conserving normalization """
-    dataShape = data.shape;
-    return np.fft.fftshift(np.fft.fftn(data)) / np.prod(dataShape);
+        self.dimensions = len(latticeVectors)
+        self.latticeVectors = latticeVectors
+        self.reciprocalLatticeVectors = self.calculateReciprocalLatticeVectors();
+        self.crystalType = self.determineCrystalType();
+        (self.keySymmetryPoints, self.keySymmetryNames) = self.generateKeySymmetryPoints()
+        self.latticeConstant = norm(self.latticeVectors[0]) # TODO: Make this more general
 
-def complexArray(arrayInListForm):
-    """ Wrapper for numpy array declaration that forces arrays to be complex doubles """
-    return np.array(arrayInListForm, dtype=np.cdouble);
+    def calculateReciprocalLatticeVectors(self):
+        if self.dimensions is 2:
+            return self.calculateReciprocalLatticeVectors2D();
+        elif self.dimensions is 3:
+            return self.calculateReciprocalLatticeVectors3D();
+        else:
+            raise NotImplementedError(f"Cannot calculate reciprocal lattice for {self.dimensions}D." +
+                    " Not currently implemented.")
 
-def complexIdentity(matrixSize):
-    """ Wrapper for numpy identity declaration that forces arrays to be complex doubles """
-    return np.identity(matrixSize, dtype=np.cdouble);
+    def calculateReciprocalLatticeVectors2D(self):
+        rotationMatirx90Degrees = complexArray([
+            [0,-1],
+            [1,0]]);
+        t1 = self.latticeVectors[0];
+        t2 = self.latticeVectors[1];
 
-def complexZeros(matrixDimensionsTuple):
-    """ Wrapper for numpy zeros declaration that forces arrays to be complex doubles """
-    return np.zeros(matrixDimensionsTuple, dtype=np.cdouble);
+        T1 = 2 * pi * rotationMatirx90Degrees @ t2 / dot(t1, rotationMatirx90Degrees @ t2);
+        T2 = 2 * pi * rotationMatirx90Degrees @ t1 / dot(t2, rotationMatirx90Degrees @ t1);
+        return (T1, T2);
 
-def complexOnes(matrixDimensionsTuple):
-    return np.ones(matrixDimensionsTuple, dtype=np.cdouble);
+    def calculateReciprocalLatticeVectors3D(self):
+        t1 = self.latticeVectors[0];
+        t2 = self.latticeVectors[1];
+        t3 = self.latticeVectors[2];
+        T1 = 2 * pi * cross(t2, t3) / dot(t1, cross(t2, t3));
+        T2 = 2 * pi * cross(t3, t1) / dot(t2, cross(t3, t1));
+        T3 = 2 * pi * cross(t1, t2) / dot(t3, cross(t1, t2));
 
-def reshapeLowDimensionalData(data):
-    dataShape = data.shape;
-    if(len(dataShape) == 1): # we have only x-data.
-        Nx = dataShape[0];
-        data = data.reshape(Nx, 1, 1);
-    elif(len(dataShape) == 2): # We have x and y data
-            Nx = dataShape[0];
-            Ny = dataShape[1];
-            data = data.reshape(Nx, Ny, 1);
-    elif(len(dataShape) == 3): # We have x- y- and z-data (
-        data = data;
-    else:
-        raise ValueError(f"""Input data has too many ({len(dataShape)}) dimensions.
-        Only designed for up to 3 spatial dimensions""");
-
-    return data;
-
-def calculateReciprocalLatticeVectors(t1, t2, t3=complexArray([0,0,0])):
-    """ calculates the reciprocal lattice vectors in 2 or 3 dimensions given the real-space lattice
-    vectors
-    Arguments:
-        ti: Real-space lattice vector i
-    """
-    if(norm(t3) == 0):
-        (T1, T2) = calculateReciprocalLatticeVectors2D(t1, t2);
-        T3 = complexArray([0,0,0]);
-        return (T1, T2, T3);
-    else:
-        (T1, T2, T3) = calculateReciprocalLatticeVectors3D(t1, t2, t3);
         return (T1, T2, T3);
 
-def calculateReciprocalLatticeVectors2D(t1, t2):
-    """ Calculates the 2D reciprocal lattice from lattice vectors in 2 dimensions.
-    Arguments:
-        ti: Real-space lattice vector i
-    """
-    rotationMatirx90Degrees = complexArray([
-        [0,-1],
-        [1,0]]);
+    def determineCrystalType(self):
+        if self.dimensions == 2:
+            crystalType = self.determineCrystalType2D()
+            return crystalType
+        else:
+            raise NotImplementedError
 
-    T1 = 2 * pi * rotationMatirx90Degrees @ t2 / dot(t1, rotationMatirx90Degrees @ t2);
-    T2 = 2 * pi * rotationMatirx90Degrees @ t1 / dot(t2, rotationMatirx90Degrees @ t1);
-    return (T1, T2);
+    def determineCrystalType2D(self):
+        epsilon = 0.00001
+        sideLengthDifference = abs(norm(self.reciprocalLatticeVectors[0]) -
+                norm(self.reciprocalLatticeVectors[1]))
+        latticeVectorProjection = abs(dot(self.reciprocalLatticeVectors[0], self.reciprocalLatticeVectors[1]))
 
-def calculateReciprocalLatticeVectors3D(t1, t2, t3):
-    """ Calculates the 2D reciprocal lattice from lattice vectors in 2 dimensions.
-    Arguments:
-        ti: Real-space lattice vector i
-    """
-    T1 = 2 * pi * cross(t2, t3) / dot(t1, cross(t2, t3));
-    T2 = 2 * pi * cross(t3, t1) / dot(t2, cross(t3, t1));
-    T3 = 2 * pi * cross(t1, t2) / dot(t3, cross(t1, t2));
+        if sideLengthDifference < epsilon and latticeVectorProjection < epsilon:
+            return "SQUARE"
+        elif sideLengthDifference > epsilon and latticeVectorProjection < epsilon:
+            return "RECTANGULAR"
+        elif latticeVectorProjection > epsilon:
+            return "OBLIQUE"
+        else:
+            raise NotImplementedError;
 
-    return (T1, T2, T3);
+    def generateKeySymmetryPoints(self):
+        keySymmetryPoints = []
+        keySymmetryNames = []
+        T1 = self.reciprocalLatticeVectors[0]
+        T2 = self.reciprocalLatticeVectors[1]
 
-def determineCrystalType(T1, T2, T3=complexArray([0,0,0])):
-    """ Determines the type of crystal we are dealing with. Currently only supports 2D crystals,
-    rectangular and square (cubic?)
-    Arguments:
-        Ti: ith reciprocal lattice vector
-    """
-    if(norm(T3) == 0):
-        crystalType = determineCrystalType2D(T1, T2);
-        return crystalType;
-    else:
-        return "UNSUPPORTED"
+        if self.crystalType == "SQUARE":
+            keySymmetryNames = ["X", "G", "M"];
+            keySymmetryPoints = [0.5 * T1, 0 * T1, 0.5 * (T1 + T2)];
+        elif self.crystalType == "RECTANGULAR":
+            keySymmetryNames = ["X", "G", "Y", "S"];
+            keySymmetryPoints = [0.5 * T1, 0 * T1, 0.5 * T2, 0.5 * (T1 + T2)];
+        else:
+            raise NotImplementedError;
 
-def determineCrystalType2D(T1, T2):
-    """ Determines the type of 2D crystal we are dealing with. Currently supports rectangular and
-    square crystals, although should easily be extensible to others.
-    Arguments:
-        Ti: ith reciprocal lattice vector
-    """
-    epsilon = 0.00001;
-    if(abs(norm(T1) - norm(T2)) < epsilon and abs(dot(T1, T2)) < epsilon):
-        return "SQUARE";
-    elif(abs(norm(T1) - norm(T2)) > epsilon and abs(dot(T1, T2)) < epsilon):
-        return "RECTANGULAR";
-    else:
-        return "UNSUPPORTED";
+        return (keySymmetryPoints, keySymmetryNames);
 
-def generateKeySymmetryPoints(T1, T2, T3=complexArray([0,0,0])):
-    """ Generates points of key symmetry for a given lattice.
-    Arguments:
-        Ti: ith reciprocal lattice unit vector
-    """
-    keySymmetryPoints = [];
-    keySymmetryNames = [];
-    crystalType = determineCrystalType(T1, T2, T3);
+class BandSolver:
 
-    if(crystalType == "SQUARE"): # We have three points of key symmetry.
-        keySymmetryNames = ["X", "G", "M"];
-        keySymmetryPoints = [0.5 * T1, 0 * T1, 0.5 * (T1 + T2)];
+    numberHarmonics = None;
 
-    elif(crystalType == "RECTANGULAR"):
-        keySymmetryNames = ["X", "G", "Y", "S"];
-        keySymmetryPoints = [0.5 * T1, 0 * T1, 0.5 * T2, 0.5 * (T1 + T2)];
+    def __init__(self, crystal):
+        raise NotImplementedError;
 
-    return (keySymmetryPoints, keySymmetryNames);
+def generateBlochVectors(crystal, internalPointsPerWalk):
 
-
-def generateBlochVectors(internalPointsPerWalk, t1, t2, t3=complexArray([0,0,0])):
-    """ Generates an array of bloch vectors that walks around the Brillouin zone of our lattice
-    from one point of key symmetry to another.
-    Arguments:
-        pointsPerWalk: The number of points desired between key points of symmetry
-        ti: ith reciprocal lattice unit vector
-    """
-    (T1, T2, T3) = calculateReciprocalLatticeVectors(t1, t2, t3);
-    (keySymmetryPoints, keySymmetryNames) = generateKeySymmetryPoints(T1, T2, T3);
-
-    # Now, take a walk through our key symmetry points by linear interpolation
-    blochVectors = [];
+    keySymmetryPoints = crystal.keySymmetryPoints
     numberSymmetryPoints = len(keySymmetryPoints);
+
+    blochVectors = [];
     nextSymmetryPoint = None;
     blochVectors.append(keySymmetryPoints[0]);
     for i in range(numberSymmetryPoints - 1):
         currentSymmetryPoint = keySymmetryPoints[i];
-        alpha = 1 / (internalPointsPerWalk + 1);
+        fractionWalked = 1 / (internalPointsPerWalk + 1);
 
         if(i + 1 < numberSymmetryPoints):
             nextSymmetryPoint = keySymmetryPoints[i + 1];
 
         for j in range(internalPointsPerWalk + 1):
             deltaVector = nextSymmetryPoint - currentSymmetryPoint;
-            desiredPoint = currentSymmetryPoint + (j + 1) * alpha * deltaVector;
+            desiredPoint = currentSymmetryPoint + (j + 1) * fractionWalked * deltaVector;
             blochVectors.append(desiredPoint);
 
     return blochVectors;
@@ -217,7 +156,7 @@ def calculateMaxHarmonic(*numberHarmonicsTi):
     return maxHarmonics;
 
 # This function is too long.
-def generateConvolutionMatrix(A, P, Q=1, R=1):
+def generateConvolutionMatrix(A, numberHarmonics):
     """
     Generates the 1, 2, or 3D matrix corresponding to the convolution operation with A.
     P: Number of spatial harmonics along x
@@ -226,6 +165,7 @@ def generateConvolutionMatrix(A, P, Q=1, R=1):
     """
     # Now, for the code below to work for any dimension we need to add dimensions to A
     dataDimension = len(A.shape);
+    (P, Q, R) = numberHarmonics
 
     convolutionMatrixSize = P*Q*R;
     convolutionMatrixShape = (convolutionMatrixSize, convolutionMatrixSize);
@@ -259,6 +199,7 @@ def generateConvolutionMatrix(A, P, Q=1, R=1):
 
                             convolutionMatrix[row][col] = \
                                 A[desiredHarmonicXLocation][desiredHarmonicYLocation][desiredHarmonicZLocation];
+    #print(convolutionMatrix)
     return convolutionMatrix;
 
 def getXComponents(*args):
@@ -373,12 +314,6 @@ def generateAMatrix(KxMatrix, KyMatrix, erMatrix, urMatrix, mode):
     return AMatrix;
 
 def generateBMatrix(erMatrix, urMatrix, mode):
-    """ Generates intermediate B matrix from material matrices
-    Arguments:
-        erMatrix: Convolution matrix for the permittivity tensor
-        urMatrix: Convolution matirx for the permeability tensor
-        mode: 'E' or 'H'
-    """
     materialMatrix = None;
     if(mode == 'E'):
         materialMatrix = erMatrix;
@@ -390,62 +325,38 @@ def generateBMatrix(erMatrix, urMatrix, mode):
     return materialMatrix;
 
 def generateVDMatrices(AMatrix, BMatrix):
-    """ Computes and sorts the eigenvalues and eigenvectors
-    Arguments:
-        AMatrix: The generalized eigenvalue problem operator including the curls and stuff
-        BMatrix: The material convolution matrix that we don't want to invert
-    """
-    # THIS CURRENTLY COMPUTES THE CORRECT EIGENVALUES BUT NOT THE RIGHT EIGENVECTORS.
+    # THIS CURRENTLY COMPUTES THE CORRECT EIGENVALUES BUT NOT THE RIGHT EIGENVECTORS AND I DON'T KNOW WHY.
     eigenValues, eigenVectors = eig(AMatrix, BMatrix);
     indices = np.flip(eigenValues.argsort()[::-1]);
     eigenValues = eigenValues[indices];
     eigenVectors = eigenVectors[indices, :];
 
     eigenValueMatrix = np.diag(eigenValues);
-    #eigenVectorMatrix = np.transpose(eigenVectors);
-    #print("\nEigenvalue [0]:");
-    #print(f"{eigenValues[0]}");
-    #print("\nEigenvectors[0]:");
-    #print(f"{eigenVectors[0]}");
-    #print(f"Norm:{sp.linalg.norm(eigenVectors[0])}")
 
     return (eigenValueMatrix, eigenVectors);
 
-def calculateEigenfrequencies(pointsPerWalk, er, ur, t1, numberHarmonicsT1, t2=complexArray([0,0,0]),
-        numberHarmonicsT2=1, t3=complexArray([0,0,0]), numberHarmonicsT3=1):
-    """ Computes from a given Bloch vector and lattice vectors the eigenfrequencies of that system
-    Arguments:
-        pointsPerWalk: The number of points between two points of symmetry in the desired band diagram
-    """
-    # ALSO, WE NEED TO COMPUTE A. FOR NOW, WE WILL JUST SAY THIS IS THE LENGTH OF THE REAL SPACE LATTICE VECTOR.
-    a = norm(t1);
-
-    # First, compute the reciprocal lattice vectors from the real-space lattice vectors.
-    # NEED TO BUILD THESE FUNCTIONS.
-    blochVectors = generateBlochVectors(pointsPerWalk, t1, t2, t3);
-    (T1, T2, T3) = calculateReciprocalLatticeVectors(t1, t2, t3);
-    (keySymmetryPoints, keySymmetryNames) = generateKeySymmetryPoints(T1, T2, T3);
+def calculateEigenfrequencies(pointsPerWalk, crystal, numberHarmonics):
+    blochVectors = generateBlochVectors(crystal, pointsPerWalk)
     data = [];
+    erConvolutionMatrix = generateConvolutionMatrix(crystal.permittivityCellData, numberHarmonics)
+    urConvolutionMatrix = generateConvolutionMatrix(crystal.permeabilityCellData, numberHarmonics)
+    (T1, T2) = crystal.reciprocalLatticeVectors
+    (numberHarmonicsT1, numberHarmonicsT2, x) = numberHarmonics
 
-    # Now, generate the convolution matrices which we will use for the rest of our program.
-    erConvolutionMatrix = generateConvolutionMatrix(er, numberHarmonicsT1, numberHarmonicsT2, numberHarmonicsT3);
-    urConvolutionMatrix = generateConvolutionMatrix(ur, numberHarmonicsT1, numberHarmonicsT2, numberHarmonicsT3);
-
-    # Finally, loop through each bloch vector to calculate all the possible eigenfrequencies for that vector.
-    # ALSO: WE SHOULD CALCULATE BOTH E AND H MODES 
+    # TODO: WE SHOULD CALCULATE BOTH E AND H MODES. CURRENTLY ONLY CALCULATE E MODES.
     for blochVector in blochVectors:
         KxMatrix = generateKxMatrix(blochVector, T1, numberHarmonicsT1,
-            T2, numberHarmonicsT2, T3, numberHarmonicsT3);
+            T2, numberHarmonicsT2);
         KyMatrix = generateKyMatrix(blochVector, T1, numberHarmonicsT1,
-            T2, numberHarmonicsT1, T3, numberHarmonicsT3);
+            T2, numberHarmonicsT1);
         AMatrix = generateAMatrix(KxMatrix, KyMatrix, erConvolutionMatrix, urConvolutionMatrix, 'E');
         BMatrix = generateBMatrix(erConvolutionMatrix, urConvolutionMatrix, 'E');
         (DMatrix, VMatrix) = generateVDMatrices(AMatrix, BMatrix);
         eigenValues = np.diagonal(DMatrix);
-        eigenFrequencies = scaleEigenvalues(eigenValues, a);
+        eigenFrequencies = scaleEigenvalues(eigenValues, crystal.latticeConstant);
         data.append(eigenFrequencies);
 
-    return (blochVectors, data, keySymmetryPoints, keySymmetryNames);
+    return (blochVectors, data, crystal.keySymmetryPoints, crystal.keySymmetryNames);
 
 def unwrapBlochVectors(blochVectors):
     """ Unwraps the bloch vectors so that we can plot them on a single axis
@@ -475,7 +386,7 @@ def generateBandData(blochVectors, eigenFrequencies):
     xData = np.array([]);
     for unwrappedBlochVector in unwrappedBlochVectors:
         xData = np.append(xData, unwrappedBlochVector * np.ones(numFrequencies));
-    yData = np.ndarray.flatten(eigenFrequencies);
+    yData = np.ndarray.flatten(np.array(eigenFrequencies));
 
     return (xData, yData);
 

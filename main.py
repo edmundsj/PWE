@@ -15,33 +15,39 @@ from core.matrices import *
 from netlist.netlist_parser import *
 import matplotlib.pyplot as plt
 
-# 1. The class NetlistParser parses a netlist and turns everything into a "Mask" or "Field" object.
-# The masks and field are returned so that they are sorted in ascending order with
-# respect to their coordinate on the optical axis.
-arguments = len(sys.argv) - 1; # The number of arguments
-netlist_location = './netlist/sample_netlist.txt';
-print(arguments);
-print(sys.argv);
-if(arguments > 0):
-    print(f"Using user defined netlist {sys.argv[1]}")
-    netlist_location = sys.argv[1];
-print("Parsing netlist... ");
-parser = NetlistParser(netlist_location);
+# For this program, I'm not certain how to easily generate a netlist. Probably just store permittivity and
+# permeability tensors in a 2D array, or as a function of position. It's kind awkward though. Might need to 
+# use some type of structural information.
 
-# Up until this point, everything is totally general, but now we have to decide
-# what it is our parser returns. I will try to have a consistent netlist format across
-# all my codes to the degree that is possible.
-[er, ur, t, sources] = parser.parseNetlist();
-print(f"Done. Found:\nPermittivities:{er}\nPermeabilities:{ur}\nInternal Layers: {t}")
+a = 0.41;
+ax = a;
+ay = a;
+r = 0.25 * a;
+er = 2.2*2.2;
 
-# First, figure out how many layers we have
-num_internal_layers = len(t);
-if(len(er) != num_internal_layers + 2):
-    raise Exception(f"Error: The number of layers is not equal to the number of permittivities. Number of permittivities is {len(er)} and number of layers is {num_layers+2}");
+t1 = np.array([ax, 0]);
+t2 = np.array([0, ay]);
 
-if(len(ur) != num_internal_layers + 2):
-    raise Exception(f"Error: The number of layers is not equal to the number of permeabilities. Number of permeabilities is {len(ur)} and number of layers is {num_layers+2}");
+Nx = 512;
+Ny = 512;
+dx = ax / Nx;
+dy = ay / Ny;
+numberHarmonicsT1 = 5;
+numberHarmonicsT2 = numberHarmonicsT1;
 
+xcoors = np.linspace(-ax/2 + dx/2, ax/2 - dx/2, Nx);
+ycoors = np.linspace(-ay/2 + dy/2, ay/2 - dy/2, Ny);
+(X, Y) = np.meshgrid(xcoors, ycoors);
+UR = complexOnes((Nx, Ny));
+ER = (er-1) * np.heaviside(sq(X) + sq(Y) - sq(r),1)
+ER = ER + 1;
 
-print("Initializing Simulation... Setting up materials, polarization, incident wave...")
-# Setup material parameters used in the simulation
+pointsPerWalk = 10;
+
+# Now that we have our permittivity data, we can directly calculate the eigenfrequencies.
+(blochVectors, eigenFrequencies, keySymmetryPoints, keySymmetryNames) = \
+    calculateEigenfrequencies(pointsPerWalk, ER, UR, t1, numberHarmonicsT1, t2, numberHarmonicsT2);
+
+(xData, yData) = generateBandData(blochVectors, eigenFrequencies);
+plt.scatter(xData, yData);
+plt.show();

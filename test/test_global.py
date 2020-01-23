@@ -414,9 +414,9 @@ class Test:
         self.testCaller(self.testDetermineCrystalType);
         self.testCaller(self.testGenerateKeySymmetryPoints);
         self.testCaller(self.testGenerateBlochVectors);
-        self.testCaller(self.testCalculateEigenFrequencies);
         self.testCaller(self.testUnwrapBlochVectors);
         self.testCaller(self.testGenerateBandData);
+        self.testCaller(self.testCalculateEigenFrequencies);
         #self.testCaller(self.testCalculateVMatrix); # EIGENVECTORS NOT WORKING, DON'T KNOW WHY.
         print("--------- END UNIT TESTS... ----------");
 
@@ -497,17 +497,15 @@ class Test:
         # Test case 1: When we pass in a homogenous device, we should get out a multiple of the identity.
         absoluteTolerance = 1e-6;
         relativeTolerance = 1e-5;
-        P = 3;
-        Q = 1;
-        R = 1;
+        numberHarmonics = (3, 3, 1)
 
         Nx = 10;
         er = 9.0;
 
-        A = er * complexOnes(Nx);
+        A = er * complexOnes((Nx, Nx));
 
-        convolutionMatrixCalculated = generateConvolutionMatrix(A, P, Q, R);
-        convolutionMatrixActual = er * complexIdentity(P*Q*R);
+        convolutionMatrixCalculated = generateConvolutionMatrix(A, numberHarmonics);
+        convolutionMatrixActual = er * complexIdentity(np.prod(numberHarmonics));
 
         assertAlmostEqual(convolutionMatrixActual, convolutionMatrixCalculated,
                 absoluteTolerance, relativeTolerance);
@@ -515,16 +513,14 @@ class Test:
         # Test case 2: using benchmarking data for relative permeability from Rumpf
         absoluteTolerance = 1e-4;
         relativeTolarence = 1e-3;
-        P = self.P;
-        Q = self.Q;
-        R = 1;
+        numberHarmonics = (self.P, self.Q, 1)
 
         A = self.UR;
         Nx = self.Nx;
         Ny = self.Ny;
 
-        convolutionMatrixCalculated = generateConvolutionMatrix(A, P, Q, R);
-        convolutionMatrixActual = complexIdentity(P*Q);
+        convolutionMatrixCalculated = generateConvolutionMatrix(A, numberHarmonics);
+        convolutionMatrixActual = complexIdentity(np.prod(numberHarmonics))
 
         assertAlmostEqual(convolutionMatrixActual, convolutionMatrixCalculated,
                 absoluteTolerance, relativeTolerance);
@@ -534,7 +530,7 @@ class Test:
         relativeTolerance = 1e-2;
         A = self.ER;
 
-        convolutionMatrixCalculated = generateConvolutionMatrix(A, P, Q, R);
+        convolutionMatrixCalculated = generateConvolutionMatrix(A, numberHarmonics);
         convolutionMatrixActual = self.erConvolutionMatrix;
         assertAlmostEqual(convolutionMatrixActual, convolutionMatrixCalculated,
                 absoluteTolerance, relativeTolerance);
@@ -760,87 +756,84 @@ class Test:
         # A simple cubic 2D lattice
         t1 = complexArray([1,0]);
         t2 = complexArray([0,1]);
+        squareCrystal = Crystal(1, 1, t1, t2)
         T1Actual = 2 * pi * complexArray([1,0]);
         T2Actual = 2 * pi * complexArray([0,1]);
-        (T1Calculated, T2Calculated, T3) = calculateReciprocalLatticeVectors(t1, t2);
+        reciprocalLatticeVectorsActual = (T1Actual, T2Actual);
+        reciprocalLatticeVectorsCalculated = squareCrystal.reciprocalLatticeVectors
 
-        assertAlmostEqual(T1Actual, T1Calculated);
-        assertAlmostEqual(T2Actual, T2Calculated);
-
-        # An oblique lattice with a different size
-        t1 = complexArray([1,1]);
-        t2 = complexArray([0,1]);
-        T1Actual = 2 * pi * complexArray([1 , 0]);
-        T2Actual = 2 * pi * complexArray([-1 , 1]);
-        (T1Calculated, T2Calculated, T3) = calculateReciprocalLatticeVectors(t1, t2);
-
-        assertAlmostEqual(T1Actual, T1Calculated);
-        assertAlmostEqual(T2Actual, T2Calculated);
+        assertAlmostEqual(reciprocalLatticeVectorsActual, reciprocalLatticeVectorsCalculated);
 
         # A rectangular 2D lattice
         t1 = complexArray([2,0]);
         t2 = complexArray([0,1]);
+        rectangularCrystal = Crystal(1, 1, t1, t2);
         T1Actual = 1 * pi * complexArray([1 , 0]);
         T2Actual = 2 * pi * complexArray([0 , 1]);
-        (T1Calculated, T2Calculated, T3) = calculateReciprocalLatticeVectors(t1, t2);
+        reciprocalLatticeVectorsActual = (T1Actual, T2Actual);
+        reciprocalLatticeVectorsCalculated = rectangularCrystal.reciprocalLatticeVectors
 
-        assertAlmostEqual(T1Actual, T1Calculated);
-        assertAlmostEqual(T2Actual, T2Calculated);
+        assertAlmostEqual(reciprocalLatticeVectorsActual, reciprocalLatticeVectorsCalculated);
 
     def testDetermineCrystalType(self):
-        # An oblique lattice with a different size
-        T1 = 1 * pi * complexArray([1 , 0]);
-        T2 = 2 * pi * complexArray([-1 , 1]);
-        crystalTypeCalculated = determineCrystalType(T1, T2);
-        crystalTypeActual = "UNSUPPORTED";
-        assertStringEqual(crystalTypeActual, crystalTypeCalculated);
-
         # A square lattice
-        T1 = 2 * pi * complexArray([1,0]);
-        T2 = 2 * pi * complexArray([0,1]);
-        crystalTypeActual = "SQUARE";
-        crystalTypeCalculated = determineCrystalType(T1, T2);
-        assertStringEqual(crystalTypeActual, crystalTypeCalculated);
+        t1 = complexArray([1,0]);
+        t2 = complexArray([0,1]);
+        squareCrystal = Crystal(1, 1, t1, t2)
+        crystalTypeActual = "SQUARE"
+        crystalTypeCalculated = squareCrystal.crystalType
+        assertStringEqual(crystalTypeActual, crystalTypeCalculated)
 
 
         # A rectangular lattice
-        T1 = 1 * pi * complexArray([1,0]);
-        T2 = 2 * pi * complexArray([0,1]);
+        t1 = complexArray([1,0]);
+        t2 = complexArray([0,2]);
+        rectangularCrystal = Crystal(1, 1, t1, t2)
         crystalTypeActual = "RECTANGULAR";
-        crystalTypeCalculated = determineCrystalType(T1, T2);
-        assertStringEqual(crystalTypeActual, crystalTypeCalculated);
+        crystalTypeCalculated = rectangularCrystal.crystalType
+        assertStringEqual(crystalTypeActual, crystalTypeCalculated)
 
     def testGenerateKeySymmetryPoints(self):
 
         # A square lattice
-        T1 = 2 * pi * complexArray([1,0]);
-        T2 = 2 * pi * complexArray([0,1]);
-        keySymmetryPointsActual = [0.5 * T1, 0*T1, 0.5 * (T1 + T2)];
-        keySymmetryNamesActual = ["X", "G", "M"];
-        (keySymmetryPointsCalculated, keySymmetryNamesCalculated) = generateKeySymmetryPoints(T1, T2);
+        t1 = complexArray([1,0]);
+        t2 = complexArray([0,1]);
+        squareCrystal = Crystal(1, 1, t1, t2)
+        T1 = 2*pi*complexArray([1, 0]);
+        T2 = 2*pi*complexArray([0,1]);
+
+        keySymmetryPointsActual = [0.5 * T1, 0*T1, 0.5 * (T1 + T2)]
+        keySymmetryNamesActual = ["X", "G", "M"]
+        keySymmetryPointsCalculated = squareCrystal.keySymmetryPoints
+        keySymmetryNamesCalculated = squareCrystal.keySymmetryNames
 
         assertArrayEqual(keySymmetryPointsActual, keySymmetryPointsCalculated);
         assertArrayEqual(keySymmetryNamesActual, keySymmetryNamesCalculated);
 
         # A rectangular Lattice
-        T1 = 2 * pi * complexArray([1, 0]);
-        T2 = 1 * pi * complexArray([0, 1]);
+        t1 = complexArray([1,0])
+        t2 = complexArray([0,2])
+        rectangularCrystal = Crystal(1, 1, t1, t2)
+        T1 = 2*pi*complexArray([1, 0]);
+        T2 = pi*complexArray([0,1]);
 
         keySymmetryPointsActual = [0.5 * T1, 0 * T1, 0.5 * T2, 0.5 * (T1 + T2)];
         keySymmetryNamesActual = ["X", "G", "Y", "S"];
-        (keySymmetryPointsCalculated, keySymmetryNamesCalculated) = generateKeySymmetryPoints(T1, T2);
+        keySymmetryPointsCalculated = rectangularCrystal.keySymmetryPoints;
+        keySymmetryNamesCalculated = rectangularCrystal.keySymmetryNames;
 
         assertArrayEqual(keySymmetryPointsActual, keySymmetryPointsCalculated);
         assertArrayEqual(keySymmetryNamesActual, keySymmetryNamesCalculated);
 
     def testGenerateBlochVectors(self):
         # Test for a square lattice with no internal points
-        numberInternalPoints = 0;
-        t1 = complexArray([1,0]);
-        t2 = complexArray([0,1]);
+        numberInternalPoints = 0
+        t1 = complexArray([1,0])
+        t2 = complexArray([0,1])
+        squareCrystal = Crystal(1, 1, t1, t2)
         T1 = 2 * pi * complexArray([1,0]);
         T2 = 2 * pi * complexArray([0,1]);
-        blochVectorsCalculated = generateBlochVectors(numberInternalPoints, t1, t2);
+        blochVectorsCalculated = generateBlochVectors(squareCrystal, numberInternalPoints)
         blochVectorsActual = [0.5 * T1, 0*T1, 0.5 * (T1 + T2)];
 
         assertArrayEqual(blochVectorsActual, blochVectorsCalculated);
@@ -849,21 +842,22 @@ class Test:
         numberInternalPoints = 0;
         t1 = complexArray([1,0]);
         t2 = 2 *complexArray([0,1]);
+        rectangularCrystal = Crystal(1, 1, t1, t2)
         T1 = 2 * pi * complexArray([1,0]);
         T2 = pi * complexArray([0,1]);
 
-        blochVectorsCalculated = generateBlochVectors(numberInternalPoints, t1, t2);
+        blochVectorsCalculated = generateBlochVectors(rectangularCrystal, numberInternalPoints)
         blochVectorsActual = [0.5 * T1, 0*T1, 0.5 * T2,  0.5 * (T1 + T2)];
 
         assertArrayEqual(blochVectorsActual, blochVectorsCalculated);
 
         # Test for a square lattice with 1 internal points.
-        numberInternalPoints = 1;
-        t1 = pi * complexArray([1,0]);
-        t2 = pi * complexArray([0,1]);
-        GammaPoint = [0,0];
+        numberInternalPoints = 1
+        t1 = pi * complexArray([1,0])
+        t2 = pi * complexArray([0,1])
+        squareCrystal = Crystal(1, 1, t1, t2)
 
-        blochVectorsCalculated = generateBlochVectors(numberInternalPoints, t1, t2);
+        blochVectorsCalculated = generateBlochVectors(squareCrystal, numberInternalPoints);
         separationDistance = 1 / (numberInternalPoints + 1);
         blochVectorsActual = [complexArray([1, 0]), complexArray([0.5, 0]), complexArray([0,0]),
                 complexArray([0.5, 0.5]), complexArray([1, 1])];
@@ -877,8 +871,7 @@ class Test:
         t1 = complexArray([1,0]);
         t2 = complexArray([0,1]);
         pointsPerWalk = 0;
-        numberHarmonicsT1 = 3;
-        numberHarmonicsT2 = 3;
+        numberHarmonics = (3, 3, 1)
 
         er = 9;
         a = 1;
@@ -896,6 +889,7 @@ class Test:
         UR = complexOnes((Nx, Ny));
         ER = (er-1) * np.heaviside(sq(X) + sq(Y) - sq(r),1)
         ER = ER + 1;
+        crystal = Crystal(ER, UR, t1, t2)
 
         eigenFrequenciesActual = [
                 complexArray([0.1817, 0.2268, 0.4020, 0.4124, 0.5578, 0.5646, 0.6642, 0.8602, 1.1107]),
@@ -904,8 +898,7 @@ class Test:
                 ]
 
         blochVectors, eigenFrequenciesCalculated, keySymmetryPoints, keySymmetryNames = \
-                calculateEigenfrequencies(pointsPerWalk, ER, UR, t1,
-                numberHarmonicsT1, t2, numberHarmonicsT2);
+                calculateEigenfrequencies(pointsPerWalk, crystal, numberHarmonics)
 
         assertAlmostEqual(eigenFrequenciesActual, eigenFrequenciesCalculated,
             absoluteTolerance, relativeTolerance);
@@ -983,8 +976,9 @@ class Test:
         ER = (er-1) * np.heaviside(sq(X) + sq(Y) - sq(r),1)
         ER = ER + 1;
 
-        erConvolutionMatrix = generateConvolutionMatrix(ER, P, Q);
-        urConvolutionMatrix = generateConvolutionMatrix(UR, P, Q);
+        numberHarmonics = (P, Q, 1)
+        erConvolutionMatrix = generateConvolutionMatrix(ER, numberHarmonics);
+        urConvolutionMatrix = generateConvolutionMatrix(UR, numberHarmonics);
         KxMatrixGPoint = generateKxMatrix(blochVectorGPoint, T1, P, T2, Q);
         KyMatrixGPoint = generateKyMatrix(blochVectorGPoint, T1, P, T2, Q);
         AMatrixGPoint = generateAMatrix(KxMatrixGPoint, KyMatrixGPoint,
