@@ -22,6 +22,7 @@ sys.path.append('core');
 from matrices import *
 from fresnel import *
 from convolution import *
+from shorthand import *
 import matplotlib.pyplot as plt
 
 statuses = [];
@@ -420,7 +421,7 @@ class Test:
         self.testCaller(self.testGenerateBlochVectors);
         self.testCaller(self.testUnwrapBlochVectors);
         self.testCaller(self.testGenerateBandData);
-        self.testCaller(self.testCalculateEigenFrequencies);
+        self.testCaller(self.testSolve);
         #self.testCaller(self.testCalculateVMatrix); # EIGENVECTORS NOT WORKING, DON'T KNOW WHY.
         print("--------- END UNIT TESTS... ----------");
 
@@ -838,7 +839,9 @@ class Test:
         squareCrystal = Crystal(1, 1, t1, t2)
         T1 = 2 * pi * complexArray([1,0]);
         T2 = 2 * pi * complexArray([0,1]);
-        blochVectorsCalculated = generateBlochVectors(squareCrystal, numberInternalPoints)
+        bandStructure = BandStructure(squareCrystal)
+        bandStructure.generateBlochVectors(numberInternalPoints)
+        blochVectorsCalculated = bandStructure.blochVectors
         blochVectorsActual = [0.5 * T1, 0*T1, 0.5 * (T1 + T2)];
 
         assertArrayEqual(blochVectorsActual, blochVectorsCalculated);
@@ -850,10 +853,11 @@ class Test:
         rectangularCrystal = Crystal(1, 1, t1, t2)
         T1 = 2 * pi * complexArray([1,0]);
         T2 = pi * complexArray([0,1]);
+        bandStructure = BandStructure(rectangularCrystal)
+        bandStructure.generateBlochVectors(numberInternalPoints)
+        blochVectorsCalculated = bandStructure.blochVectors
 
-        blochVectorsCalculated = generateBlochVectors(rectangularCrystal, numberInternalPoints)
         blochVectorsActual = [0.5 * T1, 0*T1, 0.5 * T2,  0.5 * (T1 + T2)];
-
         assertArrayEqual(blochVectorsActual, blochVectorsCalculated);
 
         # Test for a square lattice with 1 internal points.
@@ -861,15 +865,17 @@ class Test:
         t1 = pi * complexArray([1,0])
         t2 = pi * complexArray([0,1])
         squareCrystal = Crystal(1, 1, t1, t2)
+        bandStructure = BandStructure(squareCrystal)
+        bandStructure.generateBlochVectors(numberInternalPoints)
+        blochVectorsCalculated = bandStructure.blochVectors
 
-        blochVectorsCalculated = generateBlochVectors(squareCrystal, numberInternalPoints);
         separationDistance = 1 / (numberInternalPoints + 1);
         blochVectorsActual = [complexArray([1, 0]), complexArray([0.5, 0]), complexArray([0,0]),
                 complexArray([0.5, 0.5]), complexArray([1, 1])];
 
         assertArrayEqual(blochVectorsActual, blochVectorsCalculated);
 
-    def testCalculateEigenFrequencies(self):
+    def testSolve(self):
         absoluteTolerance = 1e-4;
         relativeTolerance = 1e-3;
         # Primitive real-space lattice vectors
@@ -895,6 +901,8 @@ class Test:
         ER = (er-1) * np.heaviside(sq(X) + sq(Y) - sq(r),1)
         ER = ER + 1;
         crystal = Crystal(ER, UR, t1, t2)
+        bandStructure = BandStructure(crystal)
+        bandStructure.Solve(numberHarmonics, pointsPerWalk)
 
         eigenFrequenciesActual = [
                 complexArray([0.1817, 0.2268, 0.4020, 0.4124, 0.5578, 0.5646, 0.6642, 0.8602, 1.1107]),
@@ -902,8 +910,7 @@ class Test:
                 complexArray([0.2429, 0.2737, 0.2739, 0.4493, 0.5574, 0.5871, 0.8257, 0.8618, 1.2471]),
                 ]
 
-        blochVectors, eigenFrequenciesCalculated, keySymmetryPoints, keySymmetryNames = \
-                calculateEigenfrequencies(pointsPerWalk, crystal, numberHarmonics)
+        eigenFrequenciesCalculated = bandStructure.frequencyData
 
         assertAlmostEqual(eigenFrequenciesActual, eigenFrequenciesCalculated,
             absoluteTolerance, relativeTolerance);
@@ -911,7 +918,10 @@ class Test:
     def testUnwrapBlochVectors(self):
         testVectors = [complexArray([1,0]), complexArray([0.5, 0]), complexArray([0,0]),
                 complexArray([0.5, 0.5]), complexArray([1, 1])];
-        xCoordinatesCalculated = unwrapBlochVectors(testVectors);
+        band = BandStructure(self.crystal)
+        band.blochVectors = testVectors
+        band.unwrapBlochVectors()
+        xCoordinatesCalculated = band.unwrappedBlochVectors
         xCoordinatesActual = [0, 0.5, 1, 1 + 1/sqrt(2), 1 + 2/sqrt(2)];
 
         assertAlmostEqual(xCoordinatesActual, xCoordinatesCalculated);
@@ -942,7 +952,12 @@ class Test:
                 0.3, 0.7, 0.8, 0.9,
                 0.4, 0.8, 0.9, 1.0,
                 0.5, 0.9, 1.0, 1.1]);
-        (xCoordinatesCalculated, yCoordinatesCalculated) = generateBandData(testVectors, testFrequencies);
+        band = BandStructure(self.crystal)
+        band.blochVectors = testVectors
+        band.frequencyData = testFrequencies
+        band.generateBandData()
+        xCoordinatesCalculated = band.xScatterPlotData
+        yCoordinatesCalculated = band.yScatterPlotData
 
         assertAlmostEqual(xCoordinatesActual, xCoordinatesCalculated);
         assertAlmostEqual(yCoordinatesActual, yCoordinatesCalculated);

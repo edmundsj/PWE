@@ -3,7 +3,6 @@ import scipy as sp
 import scipy.linalg
 import math as math
 from collections import OrderedDict
-from shorthand import *
 
 inv = np.linalg.inv;
 matrixExponentiate = sp.linalg.expm

@@ -11,9 +11,13 @@ import numpy as np
 import scipy as sp
 import scipy.linalg
 import sys
-from core.matrices import *
+
+sys.path.append('core')
+
+from matrices import *
 from netlist.netlist_parser import *
 import matplotlib.pyplot as plt
+
 
 # For this program, I'm not certain how to easily generate a netlist. Probably just store permittivity and
 # permeability tensors in a 2D array, or as a function of position. It's kind awkward though. Might need to 
@@ -32,8 +36,6 @@ Nx = 512;
 Ny = 512;
 dx = ax / Nx;
 dy = ay / Ny;
-numberHarmonicsT1 = 5;
-numberHarmonicsT2 = numberHarmonicsT1;
 
 xcoors = np.linspace(-ax/2 + dx/2, ax/2 - dx/2, Nx);
 ycoors = np.linspace(-ay/2 + dy/2, ay/2 - dy/2, Ny);
@@ -43,11 +45,9 @@ ER = (er-1) * np.heaviside(sq(X) + sq(Y) - sq(r),1)
 ER = ER + 1;
 
 pointsPerWalk = 10;
-
-# Now that we have our permittivity data, we can directly calculate the eigenfrequencies.
-(blochVectors, eigenFrequencies, keySymmetryPoints, keySymmetryNames) = \
-    calculateEigenfrequencies(pointsPerWalk, ER, UR, t1, numberHarmonicsT1, t2, numberHarmonicsT2);
-
-(xData, yData) = generateBandData(blochVectors, eigenFrequencies);
-plt.scatter(xData, yData);
-plt.show();
+crystal = Crystal(ER, UR, t1, t2)
+band = BandStructure(crystal)
+numberInternalPoints = 0;
+numberHarmonics = (21, 21,1)
+band.Solve(numberHarmonics, numberInternalPoints)
+band.Plot(0.9)
